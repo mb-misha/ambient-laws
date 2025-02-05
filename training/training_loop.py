@@ -16,6 +16,8 @@ import psutil
 import numpy as np
 import torch
 import torch.nn as nn
+
+from dataset_gbm import GBMGenerativeDataset
 import dnnlib
 from torch_utils import distributed as dist
 from torch_utils import training_stats
@@ -70,26 +72,28 @@ def training_loop(
 
     # Load dataset.
     dist.print0('Loading dataset...')
-    dataset_obj = ambient_utils.dataset_utils.ImageFolderDataset(**dataset_kwargs)
+    # dataset_obj = ambient_utils.dataset_utils.ImageFolderDataset(**dataset_kwargs)
+    dataset_obj = GBMGenerativeDataset()
     # random indices for dataset visualization
-    indices = [476716, 801177, 208667, 84697, 708005, 481119, 882784, 314948, 241315, 900832, 937237, 522057, 844026, 1021191, 789191, 668501]
-    indices = [index % len(dataset_obj) for index in indices]
-    images_to_save = [torch.tensor(dataset_obj[i]['image']) for i in indices]
-    if dist.get_rank() == 0:
-        ambient_utils.save_images(torch.stack(images_to_save), os.path.join(run_dir, "dataset.png"), save_wandb=True)
+    # indices = [476716, 801177, 208667, 84697, 708005, 481119, 882784, 314948, 241315, 900832, 937237, 522057, 844026, 1021191, 789191, 668501]
+    # indices = [index % len(dataset_obj) for index in indices]
+    # images_to_save = [torch.tensor(dataset_obj[i]['image']) for i in indices]
+    # if dist.get_rank() == 0:
+    #     ambient_utils.save_images(torch.stack(images_to_save), os.path.join(run_dir, "dataset.png"), save_wandb=True)
     dataset_sampler = misc.InfiniteSampler(dataset=dataset_obj, rank=dist.get_rank(), num_replicas=dist.get_world_size(), seed=seed)
     dataset_iterator = iter(torch.utils.data.DataLoader(dataset=dataset_obj, sampler=dataset_sampler, batch_size=batch_gpu, **data_loader_kwargs))
 
     # Construct network.
     dist.print0('Constructing network...')
-    interface_kwargs = dict(img_resolution=dataset_obj.resolution, img_channels=dataset_obj.num_channels, label_dim=dataset_obj.label_dim)
+    # interface_kwargs = dict(img_resolution=dataset_obj.resolution, img_channels=1)
+    interface_kwargs = dict()
     net = dnnlib.util.construct_class_by_name(**network_kwargs, **interface_kwargs) # subclass of torch.nn.Module
     net.train().requires_grad_(True).to(device)
-    with torch.no_grad():
-        images = torch.zeros([batch_gpu, net.img_channels, net.img_resolution, net.img_resolution], device=device)
-        sigma = torch.ones([batch_gpu], device=device)
-        labels = torch.zeros([batch_gpu, net.label_dim], device=device)
-        misc.print_module_summary(net, [images, sigma, labels], max_nesting=2, verbose=dist.get_rank() == 0)
+    # with torch.no_grad():
+    #     images = torch.zeros([batch_gpu, net.img_channels, net.img_resolution, net.img_resolution], device=device)
+    #     sigma = torch.ones([batch_gpu], device=device)
+    #     labels = torch.zeros([batch_gpu, net.label_dim], device=device)
+    #     misc.print_module_summary(net, [images, sigma, labels], max_nesting=2, verbose=dist.get_rank() == 0)
 
     # Setup optimizer.
     dist.print0('Setting up optimizer...')
@@ -135,14 +139,17 @@ def training_loop(
         for round_idx in range(num_accumulation_rounds):
             with misc.ddp_sync(ddp, (round_idx == num_accumulation_rounds - 1)):
                 dataset_item = next(dataset_iterator)
-                images = dataset_item["image"].to(device)                
-                labels = dataset_item["label"].to(device)
-                current_sigma = dataset_item["sigma"].to(device)
+                #images = dataset_item["image"].to(device)
+                images = dataset_item.to(device)
+                #labels = dataset_item["label"].to(device)
+                labels = None
+                #current_sigma = dataset_item["sigma"].to(device)
+                current_sigma = torch.zeros([batch_gpu], device=device)
                 loss, x0_pred = loss_fn(net=ddp, images=images, labels=labels, current_sigma=current_sigma, augment_pipe=augment_pipe)
 
                 # every 500 steps save the images
-                if cur_tick % 500 == 0 and dist.get_rank() == 0:
-                    ambient_utils.save_images(x0_pred, os.path.join(run_dir, f"images_{cur_tick}.png"), save_wandb=True)
+                # if cur_tick % 500 == 0 and dist.get_rank() == 0:
+                #     ambient_utils.save_images(x0_pred, os.path.join(run_dir, f"images_{cur_tick}.png"), save_wandb=True)
                 
                 training_stats.report('Loss/loss', loss)
                 loss.sum().mul(loss_scaling / batch_gpu_total).backward()

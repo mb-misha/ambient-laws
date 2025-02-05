@@ -36,20 +36,25 @@ class EDMLoss:
     def __call__(self, net, images, labels=None, current_sigma=0.0, augment_pipe=None):
 
         net._set_static_graph()
-        current_sigma = current_sigma.unsqueeze(1).unsqueeze(1).unsqueeze(1)
+        # current_sigma = current_sigma.unsqueeze(1).unsqueeze(1).unsqueeze(1)
 
-        rnd_normal = torch.randn([images.shape[0], 1, 1, 1], device=images.device)
+        rnd_normal = torch.randn([images.shape[0]], device=images.device)
         # sample a sigma in [current_sigma, sigma_T]
         sigma = (rnd_normal * self.P_std + self.P_mean).exp()        
         sigma = torch.clamp(sigma, min=current_sigma)
         y, augment_labels = augment_pipe(images) if augment_pipe is not None else (images, None)
         
         # add additional noise to reach the level sigma
-        n = torch.randn_like(y) * torch.sqrt(sigma ** 2 - current_sigma ** 2)
+        n = torch.randn_like(y) * torch.sqrt(sigma ** 2 - current_sigma ** 2).view(images.shape[0], 1, 1)
         noisy_input = y + n
         x0_pred = net(noisy_input, sigma, labels, augment_labels=augment_labels)
         # make it xtn prediction
-        D_yn = ambient_utils.from_x0_pred_to_xnature_pred_ve_to_ve(x0_pred, noisy_input, sigma, current_sigma)
+        D_yn = ambient_utils.from_x0_pred_to_xnature_pred_ve_to_ve(
+            x0_pred,
+            noisy_input,
+            sigma.view(sigma.shape[0], 1, 1),
+            current_sigma.view(current_sigma.shape[0], 1, 1)
+        )
         
         # loss weight depends on sigma
         weight = (sigma ** 2 + self.sigma_data ** 2) / (sigma * self.sigma_data) ** 2

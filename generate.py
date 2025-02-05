@@ -21,8 +21,32 @@ from torch_utils import distributed as dist
 import joblib
 from huggingface_hub import hf_hub_download
 import json
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
 #----------------------------------------------------------------------------
 # Proposed EDM sampler (Algorithm 2).
+
+sns.set_style("whitegrid")
+
+
+
+def estimate_gbm_parameters(all_ts_data, dt=1):
+    """
+    Estimate GBM parameters (mu and sigma) using logarithmic returns over the entire dataset.
+
+    Args:
+        all_ts_data (numpy.ndarray): All generated time series data (batch_size, ts_length).
+        dt (float): Time increment, default is 1.
+
+    Returns:
+        mu_est (float): Estimated drift for the dataset.
+        sigma_est (float): Estimated volatility for the dataset.
+    """
+    log_returns = np.log(all_ts_data[:, 1:] / all_ts_data[:, :-1])  # Compute log returns
+    mu_est = np.mean(log_returns) / dt  # Estimate drift
+    sigma_est = np.std(log_returns) / np.sqrt(dt)  # Estimate volatility
+    return mu_est, sigma_est
 
 def edm_sampler(
     net, latents, class_labels=None, randn_like=torch.randn_like,
@@ -30,6 +54,7 @@ def edm_sampler(
     S_churn=0, S_min=0, S_max=float('inf'), S_noise=1,
     stop_variance=0.0
 ):
+    batch_size = latents.shape[0]
     # Adjust noise levels based on what's supported by the network.
     sigma_min = max(sigma_min, net.sigma_min)
     sigma_max = min(sigma_max, net.sigma_max)
@@ -42,28 +67,30 @@ def edm_sampler(
     # Main sampling loop.
     x_next = latents.to(torch.float64) * t_steps[0]
     for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])): # 0, ..., N-1
+        t_cur = t_cur.expand(batch_size)  # Expand to (batch_size,)
+        t_next = t_next.expand(batch_size)
         x_cur = x_next
 
         # Increase noise temporarily.
-        gamma = min(S_churn / num_steps, np.sqrt(2) - 1) if S_min <= t_cur <= S_max else 0
-        t_hat = net.round_sigma(t_cur + gamma * t_cur)
-        x_hat = x_cur + (t_hat ** 2 - t_cur ** 2).sqrt() * S_noise * randn_like(x_cur)
+        gamma = torch.where((t_cur >= S_min) & (t_cur <= S_max), min(S_churn / num_steps, np.sqrt(2) - 1), torch.tensor(0.0, device=t_cur.device))
+        t_hat = net.round_sigma(t_cur + gamma * t_cur).expand(batch_size)
+        x_hat = x_cur + (t_hat ** 2 - t_cur ** 2).sqrt().view(batch_size, 1, 1) * S_noise * randn_like(x_cur)
 
         # Euler step.
-        denoised = net(x_hat, t_hat, class_labels).to(torch.float64)
+        denoised = net(x_hat.to(torch.float32), t_hat.to(torch.float32), class_labels).to(torch.float64)
         
         # Stop if variance is below threshold
-        if t_next ** 2 < stop_variance:
+        if (t_next ** 2 < stop_variance).all():
             return denoised
 
-        d_cur = (x_hat - denoised) / t_hat
-        x_next = x_hat + (t_next - t_hat) * d_cur
+        d_cur = (x_hat - denoised) / t_hat.view(batch_size, 1, 1)
+        x_next = x_hat + (t_next - t_hat).view(batch_size, 1, 1) * d_cur
 
         # Apply 2nd order correction.
         if i < num_steps - 1:
-            denoised = net(x_next, t_next, class_labels).to(torch.float64)
-            d_prime = (x_next - denoised) / t_next
-            x_next = x_hat + (t_next - t_hat) * (0.5 * d_cur + 0.5 * d_prime)
+            denoised = net(x_next.to(torch.float32), t_next.to(torch.float32), class_labels).to(torch.float64)
+            d_prime = (x_next - denoised) / t_next.view(batch_size, 1, 1)
+            x_next = x_hat + (t_next - t_hat).view(batch_size, 1, 1) * (0.5 * d_cur + 0.5 * d_prime)
 
     return x_next
 
@@ -301,7 +328,7 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
 
         # Pick latents and labels.
         rnd = StackedRandomGenerator(device, batch_seeds)
-        latents = rnd.randn([batch_size, net.img_channels, net.img_resolution, net.img_resolution], device=device)
+        latents = rnd.randn([batch_size, 200, 1], device=device)
         class_labels = None
         if net.label_dim:
             class_labels = torch.eye(net.label_dim, device=device)[rnd.randint(net.label_dim, size=[batch_size], device=device)]
@@ -316,15 +343,51 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
         images = sampler_fn(net, latents, class_labels, randn_like=rnd.randn_like, **sampler_kwargs)
 
         # Save images.
-        images_np = (images * 127.5 + 128).clip(0, 255).to(torch.uint8).permute(0, 2, 3, 1).cpu().numpy()
-        for seed, image_np in zip(batch_seeds, images_np):
-            image_dir = os.path.join(outdir, f'{seed-seed%1000:06d}') if subdirs else outdir
-            os.makedirs(image_dir, exist_ok=True)
-            image_path = os.path.join(image_dir, f'{seed:06d}.png')
-            if image_np.shape[2] == 1:
-                PIL.Image.fromarray(image_np[:, :, 0], 'L').save(image_path)
-            else:
-                PIL.Image.fromarray(image_np, 'RGB').save(image_path)
+        images_np = images.cpu().numpy()  # Shape: (batch_size=50, ts_length=200, num_features=1)
+
+        # Reshape: Remove the last dimension to get (batch_size=50, ts_length=200)
+        images_np = images_np.squeeze(-1)  # Now shape is (50, 200)
+
+        # Transpose: Make shape (200, 50) so that each column represents a generated time series
+        images_np_transposed = images_np.T  # Now shape is (200, 50)
+
+        # Estimate GBM parameters using the entire dataset
+        mu_est, sigma_est = estimate_gbm_parameters(images_np)
+
+        # Create output directory if needed
+        os.makedirs(outdir, exist_ok=True)
+
+        # Save entire dataset to CSV
+        csv_path = os.path.join(outdir, 'generated_time_series.csv')
+        df = pd.DataFrame(images_np_transposed, columns=[f'Sample_{i + 1}' for i in range(images_np.shape[0])])
+        df.to_csv(csv_path, index_label='Time Step')
+        print(f"Saved all generated time series to {csv_path}")
+
+        # Plot a subset of time series on the same plot
+        num_samples_to_plot = min(5, images_np.shape[0])  # Choose a small subset (e.g., 5 samples)
+        subset_indices = np.random.choice(images_np.shape[0], num_samples_to_plot, replace=False)
+        subset_ts = images_np[subset_indices]  # Select these time series
+
+        plt.figure(figsize=(10, 5))
+
+        # Plot selected time series
+        for i, ts in enumerate(subset_ts):
+            plt.plot(ts, label=f'Sample {i + 1}')
+
+        plt.xlabel('Time Step', fontsize=12)
+        plt.ylabel('Value', fontsize=12)
+        plt.title('Subset of Generated Time Series', fontsize=14)
+        plt.legend(loc='upper left', bbox_to_anchor=(1, 1), fontsize=10, frameon=True)  # Move legend outside
+
+        # Add estimated GBM parameters without overlapping
+        plt.text(0.02, 0.95, f"Estimated μ: {mu_est:.4f}", transform=plt.gca().transAxes, fontsize=12, color="blue")
+        plt.text(0.02, 0.90, f"Estimated σ: {sigma_est:.4f}", transform=plt.gca().transAxes, fontsize=12, color="red")
+
+        # Save the plot
+        plot_path = os.path.join(outdir, 'subset_plot.png')
+        plt.savefig(plot_path, bbox_inches='tight')
+        plt.close()
+        print(f"Saved subset plot to {plot_path}")
 
     # Done.
     torch.distributed.barrier()

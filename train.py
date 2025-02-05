@@ -13,6 +13,8 @@ import re
 import json
 import click
 import torch
+
+import dataset_gbm
 import dnnlib
 from torch_utils import distributed as dist
 from training import training_loop
@@ -46,9 +48,9 @@ def parse_int_list(s):
 
 # Main options.
 @click.option('--outdir',        help='Where to save the results', metavar='DIR',                   type=str, required=True)
-@click.option('--data',          help='Path to the dataset', metavar='ZIP|DIR',                     type=str, required=True)
+# @click.option('--data',          help='Path to the dataset', metavar='ZIP|DIR',                     type=str, required=True)
 @click.option('--cond',          help='Train class-conditional model', metavar='BOOL',              type=bool, default=False, show_default=True)
-@click.option('--arch',          help='Network architecture', metavar='ddpmpp|ncsnpp|adm',          type=click.Choice(['ddpmpp', 'ncsnpp', 'adm']), default='ddpmpp', show_default=True)
+@click.option('--arch',          help='Network architecture', metavar='ddpmpp|ncsnpp|adm',          type=click.Choice(['ddpmpp', 'ncsnpp', 'adm', 's4']), default='ddpmpp', show_default=True)
 @click.option('--precond',       help='Preconditioning & loss function', metavar='vp|ve|edm',       type=click.Choice(['vp', 've', 'edm']), default='edm', show_default=True)
 
 # Hyperparameters.
@@ -119,7 +121,7 @@ def main(**kwargs):
 
     # Initialize config dict.
     c = dnnlib.EasyDict()
-    c.dataset_kwargs = dnnlib.EasyDict(path=opts.data, use_labels=opts.cond, xflip=opts.xflip, cache=opts.cache, sigma=opts.sigma, 
+    c.dataset_kwargs = dnnlib.EasyDict(use_labels=opts.cond, xflip=opts.xflip, cache=opts.cache, sigma=opts.sigma,
                                        corruption_probability_per_image=opts.corruption_probability, corruption_probability_per_pixel=1.0, 
                                        only_positive=False)
     c.data_loader_kwargs = dnnlib.EasyDict(pin_memory=True, num_workers=opts.workers, prefetch_factor=2)
@@ -129,7 +131,8 @@ def main(**kwargs):
 
     # Validate dataset options.
     try:
-        dataset_obj = ambient_utils.dataset_utils.ImageFolderDataset(**c.dataset_kwargs)
+        # dataset_obj = ambient_utils.dataset_utils.ImageFolderDataset(**c.dataset_kwargs)
+        dataset_obj = dataset_gbm.GBMGenerativeDataset()
         dataset_name = dataset_obj.name
         c.dataset_kwargs.dataset_keep_percentage = opts.dataset_keep_percentage
         c.dataset_kwargs.resolution = dataset_obj.resolution # be explicit about dataset resolution
@@ -147,13 +150,15 @@ def main(**kwargs):
     elif opts.arch == 'ncsnpp':
         c.network_kwargs.update(model_type='SongUNet', embedding_type='fourier', encoder_type='residual', decoder_type='standard')
         c.network_kwargs.update(channel_mult_noise=2, resample_filter=[1,3,3,1], model_channels=128, channel_mult=[2,2,2])
+    elif opts.arch == 's4':
+        c.network_kwargs.update(model_type='BackboneModel', input_dim=1, hidden_dim=64, output_dim=1, step_emb=128, num_residual_blocks=3, num_features=0)
     else:
         assert opts.arch == 'adm'
         c.network_kwargs.update(model_type='DhariwalUNet', model_channels=192, channel_mult=[1,2,3,4])
 
 
     assert opts.precond == 'edm'
-    c.network_kwargs.class_name = 'training.networks.EDMPrecond'
+    c.network_kwargs.class_name = 'training.networks.S4EDMPrecond'
     c.loss_kwargs.class_name = 'training.loss.EDMLoss'
     c.loss_kwargs.update(consistency_batch_size_per_gpu=opts.consistency_batch_size // dist.get_world_size())
     # whether to use weight for the consistency terms
@@ -234,7 +239,7 @@ def main(**kwargs):
     dist.print0(json.dumps(c, indent=2))
     dist.print0()
     dist.print0(f'Output directory:        {c.run_dir}')
-    dist.print0(f'Dataset path:            {c.dataset_kwargs.path}')
+    # dist.print0(f'Dataset path:            {c.dataset_kwargs.path}')
     dist.print0(f'Class-conditional:       {c.dataset_kwargs.use_labels}')
     dist.print0(f'Network architecture:    {opts.arch}')
     dist.print0(f'Preconditioning & loss:  {opts.precond}')
