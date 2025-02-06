@@ -99,6 +99,17 @@ def parse_int_list(s):
 @click.option("--num_primes", help="Number of primes for the consistency loss.", type=int, default=6)
 @click.option("--consistency_coeff", help="Coefficient for the consistency loss.", type=float, default=0.0)
 
+
+# GBM params
+@click.option("--n_paths", help="Number of paths for the simulation.", type=int, default=10000)
+@click.option("--n_steps", help="Number of steps in the simulation.", type=int, default=200)
+@click.option("--n_ts_features", help="Number of time-series features.", type=int, default=1)
+@click.option("--S0", help="Initial value of the asset price.", type=float, default=100.0)
+@click.option("--mu", help="Expected return rate of the asset.", type=float, default=0.05)
+@click.option("--sigma", help="Volatility of the asset.", type=float, default=0.2)
+@click.option("--T", help="Time horizon for the simulation.", type=float, default=1.0)
+
+
 def main(**kwargs):
     """Train diffusion-based generative model using the techniques described in the
     paper "Elucidating the Design Space of Diffusion-Based Generative Models".
@@ -128,11 +139,20 @@ def main(**kwargs):
     c.network_kwargs = dnnlib.EasyDict()
     c.loss_kwargs = dnnlib.EasyDict()
     c.optimizer_kwargs = dnnlib.EasyDict(class_name='torch.optim.Adam', lr=opts.lr, betas=[0.9,0.999], eps=1e-8, weight_decay=opts.weight_decay)
+    c.gbm_kwargs = dnnlib.EasyDict(
+        n_paths=opts.n_paths,
+        n_steps=opts.n_steps,
+        n_ts_features=opts.n_ts_features,
+        S0=opts.S0,
+        mu=opts.mu,
+        sigma=opts.sigma,
+        T=opts.T,
+    )
 
     # Validate dataset options.
     try:
         # dataset_obj = ambient_utils.dataset_utils.ImageFolderDataset(**c.dataset_kwargs)
-        dataset_obj = dataset_gbm.GBMGenerativeDataset()
+        dataset_obj = dataset_gbm.GBMGenerativeDataset(**c.gbm_kwargs)
         dataset_name = dataset_obj.name
         c.dataset_kwargs.dataset_keep_percentage = opts.dataset_keep_percentage
         c.dataset_kwargs.resolution = dataset_obj.resolution # be explicit about dataset resolution

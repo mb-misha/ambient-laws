@@ -35,6 +35,7 @@ def training_loop(
     network_kwargs      = {},       # Options for model and preconditioning.
     loss_kwargs         = {},       # Options for loss function.
     optimizer_kwargs    = {},       # Options for optimizer.
+    gbm_kwargs          = {},       # Options for GBM dataset.
     augment_kwargs      = None,     # Options for augmentation pipeline, None = disable.
     seed                = 0,        # Global random seed.
     batch_size          = 512,      # Total batch size for one training iteration.
@@ -73,7 +74,7 @@ def training_loop(
     # Load dataset.
     dist.print0('Loading dataset...')
     # dataset_obj = ambient_utils.dataset_utils.ImageFolderDataset(**dataset_kwargs)
-    dataset_obj = GBMGenerativeDataset()
+    dataset_obj = GBMGenerativeDataset(**gbm_kwargs)
     # random indices for dataset visualization
     # indices = [476716, 801177, 208667, 84697, 708005, 481119, 882784, 314948, 241315, 900832, 937237, 522057, 844026, 1021191, 789191, 668501]
     # indices = [index % len(dataset_obj) for index in indices]

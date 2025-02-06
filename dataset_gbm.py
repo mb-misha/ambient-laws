@@ -14,12 +14,13 @@ class GBMGenerativeDataset(Dataset):
         S0=100.0,
         mu=0.05,
         sigma=0.2,
-        dt=1/252
+        T=1.0,
     ):
         """
         Generates GBM paths with shape (n_paths, n_steps, n_ts_features).
         """
         self.n_ts_features = n_ts_features
+        dt = T / n_steps
         self.paths = self.simulate_gbm_paths(n_paths, n_steps, S0, mu, sigma, dt)
         self.name = 'GBMGenerativeDataset'
         self.resolution = n_steps
