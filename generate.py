@@ -30,8 +30,7 @@ import seaborn as sns
 sns.set_style("whitegrid")
 
 
-
-def estimate_gbm_parameters(all_ts_data, dt=1):
+def estimate_gbm_parameters(all_ts_data, dt=1/200):
     """
     Estimate GBM parameters (mu and sigma) using logarithmic returns over the entire dataset.
 
@@ -47,6 +46,23 @@ def estimate_gbm_parameters(all_ts_data, dt=1):
     mu_est = np.mean(log_returns) / dt  # Estimate drift
     sigma_est = np.std(log_returns) / np.sqrt(dt)  # Estimate volatility
     return mu_est, sigma_est
+
+
+def convert_log_returns_to_gbm(log_returns, S0=100):
+    """
+    Convert log returns back to GBM price paths.
+
+    Args:
+        log_returns (numpy.ndarray): Log returns with shape (batch_size, ts_length).
+        S0 (float): Initial stock price, default is 100.
+
+    Returns:
+        numpy.ndarray: Reconstructed GBM paths.
+    """
+    gbm_paths = np.zeros_like(log_returns, dtype=np.float32)
+    gbm_paths[:, 0] = S0  # Set initial price
+    gbm_paths[:, 1:] = S0 * np.exp(np.cumsum(log_returns[:, 1:], axis=1))  # Reconstruct GBM
+    return gbm_paths
 
 def edm_sampler(
     net, latents, class_labels=None, randn_like=torch.randn_like,
@@ -318,6 +334,8 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
     if dist.get_rank() == 0:
         torch.distributed.barrier()
 
+    all_generated_paths = []
+
     # Loop over batches.
     dist.print0(f'Generating {len(seeds)} images to "{outdir}"...')
     for batch_seeds in tqdm.tqdm(rank_batches, unit='batch', disable=(dist.get_rank() != 0)):
@@ -340,33 +358,52 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
         sampler_kwargs = {key: value for key, value in sampler_kwargs.items() if value is not None}
         have_ablation_kwargs = any(x in sampler_kwargs for x in ['solver', 'discretization', 'schedule', 'scaling'])
         sampler_fn = ablation_sampler if have_ablation_kwargs else edm_sampler
+
+        # Configurations
+        return_log_returns = False  # Change this to False for raw GBM
+        initial_price = 100.0  # Initial price for GBM reconstruction if log returns
+
+        # Generate time series data
         images = sampler_fn(net, latents, class_labels, randn_like=rnd.randn_like, **sampler_kwargs)
 
-        # Save images.
-        images_np = images.cpu().numpy()  # Shape: (batch_size=50, ts_length=200, num_features=1)
+        # Convert to NumPy
+        images_np = images.cpu().numpy()  # Shape: (batch_size, ts_length=200, num_features=1)
 
-        # Reshape: Remove the last dimension to get (batch_size=50, ts_length=200)
-        images_np = images_np.squeeze(-1)  # Now shape is (50, 200)
+        # Remove last dimension if it's 1D
+        images_np = images_np.squeeze(-1)  # Now shape is (batch_size, ts_length)
 
-        # Transpose: Make shape (200, 50) so that each column represents a generated time series
-        images_np_transposed = images_np.T  # Now shape is (200, 50)
+        # If using log returns, convert back to GBM
+        if return_log_returns:
+            print("Converting log returns back to GBM prices...")
+            images_np = convert_log_returns_to_gbm(images_np, S0=initial_price)
+
+        # Accumulate all generated paths
+        all_generated_paths.append(images_np)
+
+    # **Merge all batches into one dataset**
+    if len(all_generated_paths) > 0:
+        all_generated_paths = np.concatenate(all_generated_paths, axis=0)  # Shape: (total_samples, ts_length)
 
         # Estimate GBM parameters using the entire dataset
-        mu_est, sigma_est = estimate_gbm_parameters(images_np)
+        mu_est, sigma_est = estimate_gbm_parameters(all_generated_paths)
+
+        # Transpose for CSV (so that each column represents a sample)
+        all_generated_paths_transposed = all_generated_paths.T  # Shape: (ts_length, total_samples)
 
         # Create output directory if needed
         os.makedirs(outdir, exist_ok=True)
 
         # Save entire dataset to CSV
         csv_path = os.path.join(outdir, 'generated_time_series.csv')
-        df = pd.DataFrame(images_np_transposed, columns=[f'Sample_{i + 1}' for i in range(images_np.shape[0])])
+        df = pd.DataFrame(all_generated_paths_transposed,
+                          columns=[f'Sample_{i + 1}' for i in range(all_generated_paths.shape[0])])
         df.to_csv(csv_path, index_label='Time Step')
         print(f"Saved all generated time series to {csv_path}")
 
         # Plot a subset of time series on the same plot
-        num_samples_to_plot = min(5, images_np.shape[0])  # Choose a small subset (e.g., 5 samples)
-        subset_indices = np.random.choice(images_np.shape[0], num_samples_to_plot, replace=False)
-        subset_ts = images_np[subset_indices]  # Select these time series
+        num_samples_to_plot = min(5, all_generated_paths.shape[0])  # Choose a small subset (e.g., 5 samples)
+        subset_indices = np.random.choice(all_generated_paths.shape[0], num_samples_to_plot, replace=False)
+        subset_ts = all_generated_paths[subset_indices]  # Select these time series
 
         plt.figure(figsize=(10, 5))
 
