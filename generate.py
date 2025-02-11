@@ -24,45 +24,11 @@ import json
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
+from dataset_gbm import estimate_parameters
 #----------------------------------------------------------------------------
 # Proposed EDM sampler (Algorithm 2).
 
 sns.set_style("whitegrid")
-
-
-def estimate_gbm_parameters(all_ts_data, dt=1/200):
-    """
-    Estimate GBM parameters (mu and sigma) using logarithmic returns over the entire dataset.
-
-    Args:
-        all_ts_data (numpy.ndarray): All generated time series data (batch_size, ts_length).
-        dt (float): Time increment, default is 1.
-
-    Returns:
-        mu_est (float): Estimated drift for the dataset.
-        sigma_est (float): Estimated volatility for the dataset.
-    """
-    log_returns = np.log(all_ts_data[:, 1:] / all_ts_data[:, :-1])  # Compute log returns
-    mu_est = np.mean(log_returns) / dt  # Estimate drift
-    sigma_est = np.std(log_returns) / np.sqrt(dt)  # Estimate volatility
-    return mu_est, sigma_est
-
-
-def convert_log_returns_to_gbm(log_returns, S0=100):
-    """
-    Convert log returns back to GBM price paths.
-
-    Args:
-        log_returns (numpy.ndarray): Log returns with shape (batch_size, ts_length).
-        S0 (float): Initial stock price, default is 100.
-
-    Returns:
-        numpy.ndarray: Reconstructed GBM paths.
-    """
-    gbm_paths = np.zeros_like(log_returns, dtype=np.float32)
-    gbm_paths[:, 0] = S0  # Set initial price
-    gbm_paths[:, 1:] = S0 * np.exp(np.cumsum(log_returns[:, 1:], axis=1))  # Reconstruct GBM
-    return gbm_paths
 
 def edm_sampler(
     net, latents, class_labels=None, randn_like=torch.randn_like,
@@ -294,9 +260,9 @@ def load_hf_checkpoint(repo_id):
 @click.option('--schedule',                help='Ablate noise schedule sigma(t)', metavar='vp|ve|linear',           type=click.Choice(['vp', 've', 'linear']))
 @click.option('--scaling',                 help='Ablate signal scaling s(t)', metavar='vp|none',                    type=click.Choice(['vp', 'none']))
 @click.option('--stop_variance', help="Early stop generation at this variance", type=float, default=0.0)
+@click.option('--n_steps', help="Number of steps for GBM reconstruction", type=int, default=200)
 
-
-def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=torch.device('cuda'), **sampler_kwargs):
+def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, n_steps, device=torch.device('cuda'), **sampler_kwargs):
     """Generate random images using the techniques described in the paper
     "Elucidating the Design Space of Diffusion-Based Generative Models".
 
@@ -346,7 +312,7 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
 
         # Pick latents and labels.
         rnd = StackedRandomGenerator(device, batch_seeds)
-        latents = rnd.randn([batch_size, 200, 1], device=device)
+        latents = rnd.randn([batch_size, n_steps, 1], device=device)
         class_labels = None
         if net.label_dim:
             class_labels = torch.eye(net.label_dim, device=device)[rnd.randint(net.label_dim, size=[batch_size], device=device)]
@@ -359,24 +325,13 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
         have_ablation_kwargs = any(x in sampler_kwargs for x in ['solver', 'discretization', 'schedule', 'scaling'])
         sampler_fn = ablation_sampler if have_ablation_kwargs else edm_sampler
 
-        # Configurations
-        return_log_returns = False  # Change this to False for raw GBM
-        initial_price = 100.0  # Initial price for GBM reconstruction if log returns
-
         # Generate time series data
         images = sampler_fn(net, latents, class_labels, randn_like=rnd.randn_like, **sampler_kwargs)
-
         # Convert to NumPy
         images_np = images.cpu().numpy()  # Shape: (batch_size, ts_length=200, num_features=1)
 
         # Remove last dimension if it's 1D
         images_np = images_np.squeeze(-1)  # Now shape is (batch_size, ts_length)
-
-        # If using log returns, convert back to GBM
-        if return_log_returns:
-            print("Converting log returns back to GBM prices...")
-            images_np = convert_log_returns_to_gbm(images_np, S0=initial_price)
-
         # Accumulate all generated paths
         all_generated_paths.append(images_np)
 
@@ -385,7 +340,7 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
         all_generated_paths = np.concatenate(all_generated_paths, axis=0)  # Shape: (total_samples, ts_length)
 
         # Estimate GBM parameters using the entire dataset
-        mu_est, sigma_est = estimate_gbm_parameters(all_generated_paths)
+        mu_est, sigma_est = estimate_parameters(all_generated_paths, dt=1/all_generated_paths.shape[1])
 
         # Transpose for CSV (so that each column represents a sample)
         all_generated_paths_transposed = all_generated_paths.T  # Shape: (ts_length, total_samples)
@@ -401,7 +356,7 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
         print(f"Saved all generated time series to {csv_path}")
 
         # Plot a subset of time series on the same plot
-        num_samples_to_plot = min(5, all_generated_paths.shape[0])  # Choose a small subset (e.g., 5 samples)
+        num_samples_to_plot = min(100, all_generated_paths.shape[0])  # Choose a small subset (e.g., 5 samples)
         subset_indices = np.random.choice(all_generated_paths.shape[0], num_samples_to_plot, replace=False)
         subset_ts = all_generated_paths[subset_indices]  # Select these time series
 
@@ -409,7 +364,7 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
 
         # Plot selected time series
         for i, ts in enumerate(subset_ts):
-            plt.plot(ts, label=f'Sample {i + 1}')
+            plt.plot(ts)
 
         plt.xlabel('Time Step', fontsize=12)
         plt.ylabel('Value', fontsize=12)
@@ -417,8 +372,8 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
         plt.legend(loc='upper left', bbox_to_anchor=(1, 1), fontsize=10, frameon=True)  # Move legend outside
 
         # Add estimated GBM parameters without overlapping
-        plt.text(0.02, 0.95, f"Estimated μ: {mu_est:.4f}", transform=plt.gca().transAxes, fontsize=12, color="blue")
-        plt.text(0.02, 0.90, f"Estimated σ: {sigma_est:.4f}", transform=plt.gca().transAxes, fontsize=12, color="red")
+        plt.text(0.02, 0.95, f"Estimated μ: {mu_est.mean():.4f}", transform=plt.gca().transAxes, fontsize=12, color="blue")
+        plt.text(0.02, 0.90, f"Estimated σ: {sigma_est.mean():.4f}", transform=plt.gca().transAxes, fontsize=12, color="red")
 
         # Save the plot
         plot_path = os.path.join(outdir, 'subset_plot.png')
