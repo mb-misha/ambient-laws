@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from torch.utils.data import Dataset
 
-sns.set_style("whitegrid")  # Use seaborn styling
 
 class GBMGenerativeDataset(Dataset):
     def __init__(
@@ -35,6 +34,9 @@ class GBMGenerativeDataset(Dataset):
         paths = self.simulate_gbm_paths(n_paths, n_steps-1, s_price, mu, sigma, dt)
         self.paths = paths.reshape(n_paths, n_steps, n_ts_features)
 
+        if return_log_returns:
+            self.paths = self.compute_log_returns()
+
 
 
         self.dt = dt  # Store dt for parameter estimation
@@ -52,6 +54,14 @@ class GBMGenerativeDataset(Dataset):
         paths = np.hstack([np.ones((n_paths, 1)), paths])
         paths = S0 * paths.cumprod(axis=1)  # Compute cumulative product to get paths
         return paths
+
+    def compute_log_returns(self):
+        """
+        Computes the log returns of the paths.
+        """
+        log_returns = np.diff(np.log(self.paths), axis=1)
+        return log_returns
+
 
     def __len__(self):
         return len(self.paths)
@@ -72,3 +82,15 @@ def estimate_parameters(paths, dt):
     log_mu = (paths[:, -1] - paths[:, 0]) / (paths.shape[1] * dt)
     mu = log_mu + 0.5 * sigma ** 2
     return mu, sigma
+
+
+def reverse_log_return(log_returns, s0):
+    n_paths = log_returns.shape[0]
+    n_steps = log_returns.shape[1] + 1
+    reconstructed_prices = np.zeros((n_paths, n_steps))
+    reconstructed_prices[:, 0] = s0
+    for i in range(1, n_steps):
+        reconstructed_prices[:, i] = reconstructed_prices[:, i - 1] * np.exp(log_returns[:, i - 1])
+    return reconstructed_prices
+
+

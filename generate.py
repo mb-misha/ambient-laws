@@ -24,7 +24,7 @@ import json
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
-from dataset_gbm import estimate_parameters
+from dataset_gbm import estimate_parameters, reverse_log_return
 #----------------------------------------------------------------------------
 # Proposed EDM sampler (Algorithm 2).
 
@@ -261,8 +261,9 @@ def load_hf_checkpoint(repo_id):
 @click.option('--scaling',                 help='Ablate signal scaling s(t)', metavar='vp|none',                    type=click.Choice(['vp', 'none']))
 @click.option('--stop_variance', help="Early stop generation at this variance", type=float, default=0.0)
 @click.option('--n_steps', help="Number of steps for GBM reconstruction", type=int, default=200)
+@click.option('--log_returns', help="Whether the output is log returns", is_flag=True)
 
-def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, n_steps, device=torch.device('cuda'), **sampler_kwargs):
+def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, n_steps, log_returns, device=torch.device('cuda'), **sampler_kwargs):
     """Generate random images using the techniques described in the paper
     "Elucidating the Design Space of Diffusion-Based Generative Models".
 
@@ -300,7 +301,10 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, n_steps
     if dist.get_rank() == 0:
         torch.distributed.barrier()
 
+    S0 = 100
     all_generated_paths = []
+    if log_returns:
+        n_steps -= 1
 
     # Loop over batches.
     dist.print0(f'Generating {len(seeds)} images to "{outdir}"...')
@@ -332,6 +336,10 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, n_steps
 
         # Remove last dimension if it's 1D
         images_np = images_np.squeeze(-1)  # Now shape is (batch_size, ts_length)
+
+        if log_returns:
+            images_np = reverse_log_return(images_np, s0=S0)
+
         # Accumulate all generated paths
         all_generated_paths.append(images_np)
 
