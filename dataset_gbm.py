@@ -32,7 +32,8 @@ class GBMGenerativeDataset(Dataset):
         dt = T / n_steps
 
         # Simulate GBM paths
-        self.paths = self.simulate_gbm_paths(n_paths, n_steps, s_price, mu, sigma, dt)
+        paths = self.simulate_gbm_paths(n_paths, n_steps-1, s_price, mu, sigma, dt)
+        self.paths = paths.reshape(n_paths, n_steps, n_ts_features)
 
 
 
