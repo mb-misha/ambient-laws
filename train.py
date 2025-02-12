@@ -13,6 +13,8 @@ import re
 import json
 import click
 import torch
+
+import dataset_gbm
 import dnnlib
 from torch_utils import distributed as dist
 from training import training_loop
@@ -46,7 +48,6 @@ def parse_int_list(s):
 
 # Main options.
 @click.option('--outdir',        help='Where to save the results', metavar='DIR',                   type=str, required=True)
-@click.option('--data',          help='Path to the dataset', metavar='ZIP|DIR',                     type=str, required=True)
 @click.option('--cond',          help='Train class-conditional model', metavar='BOOL',              type=bool, default=False, show_default=True)
 @click.option('--arch',          help='Network architecture', metavar='ddpmpp|ncsnpp|adm',          type=click.Choice(['ddpmpp', 'ncsnpp', 'adm']), default='ddpmpp', show_default=True)
 @click.option('--precond',       help='Preconditioning & loss function', metavar='vp|ve|edm',       type=click.Choice(['vp', 've', 'edm']), default='edm', show_default=True)
@@ -97,6 +98,16 @@ def parse_int_list(s):
 @click.option("--num_primes", help="Number of primes for the consistency loss.", type=int, default=6)
 @click.option("--consistency_coeff", help="Coefficient for the consistency loss.", type=float, default=0.0)
 
+
+# GBM params
+@click.option("--n_paths", help="Number of paths for the simulation.", type=int, default=10000)
+@click.option("--n_steps", help="Number of steps in the simulation.", type=int, default=200)
+@click.option("--n_ts_features", help="Number of time-series features.", type=int, default=1)
+@click.option("--s_price", help="Initial value of the asset price.", type=float, default=100.0)
+@click.option("--mu", help="Expected return rate of the asset.", type=float, default=0.05)
+@click.option("--sigma", help="Volatility of the asset.", type=float, default=0.2)
+@click.option("--return_log_returns", help="Whether to return log returns instead of price paths.", type=bool, default=False)
+
 def main(**kwargs):
     """Train diffusion-based generative model using the techniques described in the
     paper "Elucidating the Design Space of Diffusion-Based Generative Models".
@@ -113,23 +124,33 @@ def main(**kwargs):
     dist.init()
 
     if dist.get_rank() == 0:
-        wandb.init(project="ambient_laws", 
+        wandb.init(project="ambient_laws",
                    config=opts, name=opts.expr_id,
                    dir=opts.outdir)
 
     # Initialize config dict.
     c = dnnlib.EasyDict()
-    c.dataset_kwargs = dnnlib.EasyDict(path=opts.data, use_labels=opts.cond, xflip=opts.xflip, cache=opts.cache, sigma=opts.sigma, 
-                                       corruption_probability_per_image=opts.corruption_probability, corruption_probability_per_pixel=1.0, 
+    c.dataset_kwargs = dnnlib.EasyDict(use_labels=opts.cond, xflip=opts.xflip, cache=opts.cache, sigma=opts.sigma,
+                                       corruption_probability_per_image=opts.corruption_probability, corruption_probability_per_pixel=1.0,
                                        only_positive=False)
     c.data_loader_kwargs = dnnlib.EasyDict(pin_memory=True, num_workers=opts.workers, prefetch_factor=2)
     c.network_kwargs = dnnlib.EasyDict()
     c.loss_kwargs = dnnlib.EasyDict()
     c.optimizer_kwargs = dnnlib.EasyDict(class_name='torch.optim.Adam', lr=opts.lr, betas=[0.9,0.999], eps=1e-8, weight_decay=opts.weight_decay)
+    c.gbm_kwargs = dnnlib.EasyDict(
+        n_paths=opts.n_paths,
+        n_steps=opts.n_steps,
+        n_ts_features=opts.n_ts_features,
+        s_price=opts.s_price,
+        mu=opts.mu,
+        sigma=opts.sigma,
+        return_log_returns=opts.return_log_returns
+    )
+    opts.dump = None
 
     # Validate dataset options.
     try:
-        dataset_obj = ambient_utils.dataset_utils.ImageFolderDataset(**c.dataset_kwargs)
+        dataset_obj = dataset_gbm.GBMGenerativeDataset(**c.gbm_kwargs)
         dataset_name = dataset_obj.name
         c.dataset_kwargs.dataset_keep_percentage = opts.dataset_keep_percentage
         c.dataset_kwargs.resolution = dataset_obj.resolution # be explicit about dataset resolution
@@ -234,7 +255,6 @@ def main(**kwargs):
     dist.print0(json.dumps(c, indent=2))
     dist.print0()
     dist.print0(f'Output directory:        {c.run_dir}')
-    dist.print0(f'Dataset path:            {c.dataset_kwargs.path}')
     dist.print0(f'Class-conditional:       {c.dataset_kwargs.use_labels}')
     dist.print0(f'Network architecture:    {opts.arch}')
     dist.print0(f'Preconditioning & loss:  {opts.precond}')
