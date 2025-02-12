@@ -22,6 +22,7 @@ from torch_utils import training_stats
 from torch_utils import misc
 import ambient_utils
 import wandb
+from dataset_gbm import GBMGenerativeDataset
 
 #----------------------------------------------------------------------------
 
@@ -33,6 +34,7 @@ def training_loop(
     network_kwargs      = {},       # Options for model and preconditioning.
     loss_kwargs         = {},       # Options for loss function.
     optimizer_kwargs    = {},       # Options for optimizer.
+    gbm_kwargs          = {},       # Options for GBM dataset.
     augment_kwargs      = None,     # Options for augmentation pipeline, None = disable.
     seed                = 0,        # Global random seed.
     batch_size          = 512,      # Total batch size for one training iteration.
@@ -70,13 +72,7 @@ def training_loop(
 
     # Load dataset.
     dist.print0('Loading dataset...')
-    dataset_obj = ambient_utils.dataset_utils.ImageFolderDataset(**dataset_kwargs)
-    # random indices for dataset visualization
-    indices = [476716, 801177, 208667, 84697, 708005, 481119, 882784, 314948, 241315, 900832, 937237, 522057, 844026, 1021191, 789191, 668501]
-    indices = [index % len(dataset_obj) for index in indices]
-    images_to_save = [torch.tensor(dataset_obj[i]['image']) for i in indices]
-    if dist.get_rank() == 0:
-        ambient_utils.save_images(torch.stack(images_to_save), os.path.join(run_dir, "dataset.png"), save_wandb=True)
+    dataset_obj = GBMGenerativeDataset(**gbm_kwargs)
     dataset_sampler = misc.InfiniteSampler(dataset=dataset_obj, rank=dist.get_rank(), num_replicas=dist.get_world_size(), seed=seed)
     dataset_iterator = iter(torch.utils.data.DataLoader(dataset=dataset_obj, sampler=dataset_sampler, batch_size=batch_gpu, **data_loader_kwargs))
 
@@ -135,7 +131,7 @@ def training_loop(
         for round_idx in range(num_accumulation_rounds):
             with misc.ddp_sync(ddp, (round_idx == num_accumulation_rounds - 1)):
                 dataset_item = next(dataset_iterator)
-                images = dataset_item["image"].to(device)                
+                images = dataset_item["image"].to(device)
                 labels = dataset_item["label"].to(device)
                 current_sigma = dataset_item["sigma"].to(device)
                 loss, x0_pred = loss_fn(net=ddp, images=images, labels=labels, current_sigma=current_sigma, augment_pipe=augment_pipe)

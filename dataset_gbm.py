@@ -26,17 +26,27 @@ class GBMGenerativeDataset(Dataset):
         dt = T / n_steps
 
         # Simulate GBM paths
-        paths = self.simulate_gbm_paths(n_paths, n_steps-1, s_price, mu, sigma, dt)
-        self.paths = paths.reshape(n_paths, n_steps, n_ts_features)
+        self.paths = self.simulate_gbm_paths(n_paths, n_steps-1, s_price, mu, sigma, dt)
 
         if return_log_returns:
             self.paths = self.compute_log_returns()
+
+        # Reshape each path into (n_steps, n_steps) by repeating along a new axis
+        # todo fix for log returns
+        self.paths = np.tile(self.paths[:, np.newaxis, :], (1, n_steps, 1))
+
+        self.paths = np.expand_dims(self.paths, axis=1)
+        assert self.paths.shape == (n_paths, 1, n_steps, n_steps)
 
 
 
         self.dt = dt  # Store dt for parameter estimation
         self.name = 'GBMGenerativeDataset'
+
+        # unet compatibility
         self.resolution = n_steps
+        self.num_channels = 1
+        self.label_dim = None
 
     def simulate_gbm_paths(self, n_paths, n_steps, S0, mu, sigma, dt):
         """
