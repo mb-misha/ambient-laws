@@ -46,7 +46,9 @@ class GBMGenerativeDataset(Dataset):
         # unet compatibility
         self.resolution = n_steps
         self.num_channels = 1
-        self.label_dim = None
+        self.label_dim = 0
+        self.has_labels = False
+        self.has_onehot_labels = False
 
     def simulate_gbm_paths(self, n_paths, n_steps, S0, mu, sigma, dt):
         """
@@ -72,7 +74,13 @@ class GBMGenerativeDataset(Dataset):
         return len(self.paths)
 
     def __getitem__(self, idx):
-        return torch.tensor(self.paths[idx], dtype=torch.float32)
+        return {
+            "image": np.array(self.paths[idx], dtype=np.float32),
+            "label": np.zeros(0, dtype=np.float32),
+            'sigma': 0.0,
+            'noise': np.zeros_like(self.paths[idx], dtype=np.float32),
+            'corruption_mask': np.zeros_like(self.paths[idx], dtype=np.float32),
+        }
 
 
 

@@ -136,10 +136,7 @@ def training_loop(
                 current_sigma = dataset_item["sigma"].to(device)
                 loss, x0_pred = loss_fn(net=ddp, images=images, labels=labels, current_sigma=current_sigma, augment_pipe=augment_pipe)
 
-                # every 500 steps save the images
-                if cur_tick % 500 == 0 and dist.get_rank() == 0:
-                    ambient_utils.save_images(x0_pred, os.path.join(run_dir, f"images_{cur_tick}.png"), save_wandb=True)
-                
+
                 training_stats.report('Loss/loss', loss)
                 loss.sum().mul(loss_scaling / batch_gpu_total).backward()
 
