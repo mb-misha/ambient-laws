@@ -14,6 +14,7 @@ class GBMGenerativeDataset(Dataset):
             sigma=0.2,
             T=1.0,
             return_log_returns=False,
+            normalize=True,
     ):
         """
         Generates GBM paths with shape (n_paths, n_steps, n_ts_features).
@@ -23,7 +24,9 @@ class GBMGenerativeDataset(Dataset):
         self.return_log_returns = return_log_returns
         self.n_paths = n_paths
         self.n_steps = n_steps
+        self.normalize = normalize
         dt = T / n_steps
+        assert n_ts_features == 1, "Only 1D timeseries data is supported."
 
         # Simulate GBM paths
         self.paths = self.simulate_gbm_paths(n_paths, n_steps-1, s_price, mu, sigma, dt)
@@ -31,12 +34,9 @@ class GBMGenerativeDataset(Dataset):
         if return_log_returns:
             self.paths = self.compute_log_returns()
 
-        # Reshape each path into (n_steps, n_steps) by repeating along a new axis
-        # todo fix for log returns
-        self.paths = np.tile(self.paths[:, np.newaxis, :], (1, n_steps, 1))
 
         self.paths = np.expand_dims(self.paths, axis=1)
-        assert self.paths.shape == (n_paths, 1, n_steps, n_steps)
+        assert self.paths.shape == (n_paths, 1, n_steps)
 
 
 
@@ -66,7 +66,7 @@ class GBMGenerativeDataset(Dataset):
         """
         Computes the log returns of the paths.
         """
-        log_returns = np.diff(np.log(self.paths), axis=1)
+        log_returns = np.diff(np.log(self.paths), axis=-1)
         return log_returns
 
 
@@ -74,8 +74,13 @@ class GBMGenerativeDataset(Dataset):
         return len(self.paths)
 
     def __getitem__(self, idx):
+        ts = self.paths[idx]
+        if self.normalize:
+            ts = (ts - np.mean(ts, axis=-1, keepdims=True)) / np.std(ts, axis=-1, keepdims=True)
+
+
         return {
-            "image": np.array(self.paths[idx], dtype=np.float32),
+            "image": ts.copy(),
             "label": np.zeros(0, dtype=np.float32),
             'sigma': 0.0,
             'noise': np.zeros_like(self.paths[idx], dtype=np.float32),
