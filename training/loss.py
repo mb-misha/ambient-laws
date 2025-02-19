@@ -36,9 +36,9 @@ class EDMLoss:
     def __call__(self, net, images, labels=None, current_sigma=0.0, augment_pipe=None):
 
         net._set_static_graph()
-        current_sigma = current_sigma.unsqueeze(1).unsqueeze(1).unsqueeze(1)
+        current_sigma = current_sigma.unsqueeze(1).unsqueeze(1)
 
-        rnd_normal = torch.randn([images.shape[0], 1, 1, 1], device=images.device)
+        rnd_normal = torch.randn([images.shape[0], 1, 1], device=images.device)
         # sample a sigma in [current_sigma, sigma_T]
         sigma = (rnd_normal * self.P_std + self.P_mean).exp()        
         sigma = torch.clamp(sigma, min=current_sigma)

@@ -655,7 +655,7 @@ class EDMPrecond(torch.nn.Module, PyTorchModelHubMixin):
 
     def forward(self, x, sigma, class_labels=None, force_fp32=False, **model_kwargs):
         x = x.to(torch.float32)
-        sigma = sigma.to(torch.float32).reshape(-1, 1, 1, 1)
+        sigma = sigma.to(torch.float32).reshape(-1, 1, 1)
         class_labels = None if self.label_dim == 0 else torch.zeros([1, self.label_dim], device=x.device) if class_labels is None else class_labels.to(torch.float32).reshape(-1, self.label_dim)
         dtype = torch.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else torch.float32
 
