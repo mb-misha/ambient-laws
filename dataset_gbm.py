@@ -14,7 +14,7 @@ class GBMGenerativeDataset(Dataset):
             sigma=0.2,
             T=1.0,
             return_log_returns=False,
-            normalize=True,
+            normalize=None,
     ):
         """
         Generates GBM paths with shape (n_paths, n_steps, n_ts_features).
@@ -27,16 +27,18 @@ class GBMGenerativeDataset(Dataset):
         self.normalize = normalize
         dt = T / n_steps
         assert n_ts_features == 1, "Only 1D timeseries data is supported."
+        assert self.normalize in [None, 'global_zscore', 'per_path_zscore', 'global_mean']
 
         # Simulate GBM paths
         self.paths = self.simulate_gbm_paths(n_paths, n_steps-1, s_price, mu, sigma, dt)
 
         if return_log_returns:
             self.paths = self.compute_log_returns()
+            self.n_steps -= 1
 
 
         self.paths = np.expand_dims(self.paths, axis=1)
-        assert self.paths.shape == (n_paths, 1, n_steps)
+        assert self.paths.shape == (n_paths, 1, self.n_steps)
 
 
 
@@ -44,7 +46,7 @@ class GBMGenerativeDataset(Dataset):
         self.name = 'GBMGenerativeDataset'
 
         # unet compatibility
-        self.resolution = n_steps
+        self.resolution = self.n_steps
         self.num_channels = 1
         self.label_dim = 0
         self.has_labels = False
@@ -75,9 +77,12 @@ class GBMGenerativeDataset(Dataset):
 
     def __getitem__(self, idx):
         ts = self.paths[idx]
-        if self.normalize:
+        if self.normalize == 'global_zscore':
+            ts = (ts - np.mean(self.paths)) / np.std(self.paths)
+        elif self.normalize == 'per_path_zscore':
             ts = (ts - np.mean(ts, axis=-1, keepdims=True)) / np.std(ts, axis=-1, keepdims=True)
-
+        elif self.normalize == 'global_mean':
+            ts = ts/np.mean(self.paths)
 
         return {
             "image": ts.copy(),
