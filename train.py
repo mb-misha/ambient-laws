@@ -107,6 +107,7 @@ def parse_int_list(s):
 @click.option("--mu", help="Expected return rate of the asset.", type=float, default=0.05)
 @click.option("--sigma", help="Volatility of the asset.", type=float, default=0.2)
 @click.option("--return_log_returns", help="Whether to return log returns instead of price paths.", type=bool, default=False)
+@click.option("--normalize", help="Normalization method for the paths.", type=str, default=None)
 
 def main(**kwargs):
     """Train diffusion-based generative model using the techniques described in the
@@ -144,7 +145,8 @@ def main(**kwargs):
         s_price=opts.s_price,
         mu=opts.mu,
         sigma=opts.sigma,
-        return_log_returns=opts.return_log_returns
+        return_log_returns=opts.return_log_returns,
+        normalize=opts.normalize
     )
     opts.dump = None
 
@@ -163,7 +165,7 @@ def main(**kwargs):
 
     # Network architecture.
     if opts.arch == 'ddpmpp':
-        c.network_kwargs.update(model_type='SongUNet', embedding_type='positional', encoder_type='standard', decoder_type='standard')
+        c.network_kwargs.update(model_type='SongUNet1D', embedding_type='positional', encoder_type='standard', decoder_type='standard')
         c.network_kwargs.update(channel_mult_noise=1, resample_filter=[1,1], model_channels=128, channel_mult=[2,2,2])
     elif opts.arch == 'ncsnpp':
         c.network_kwargs.update(model_type='SongUNet', embedding_type='fourier', encoder_type='residual', decoder_type='standard')

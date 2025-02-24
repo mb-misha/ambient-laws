@@ -21,6 +21,7 @@ from torch_utils import distributed as dist
 import joblib
 from huggingface_hub import hf_hub_download
 import json
+import matplotlib.pyplot as plt
 #----------------------------------------------------------------------------
 # Proposed EDM sampler (Algorithm 2).
 
@@ -291,6 +292,8 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
     if dist.get_rank() == 0:
         torch.distributed.barrier()
 
+    all_generated = []
+
     # Loop over batches.
     dist.print0(f'Generating {len(seeds)} images to "{outdir}"...')
     for batch_seeds in tqdm.tqdm(rank_batches, unit='batch', disable=(dist.get_rank() != 0)):
@@ -301,7 +304,7 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
 
         # Pick latents and labels.
         rnd = StackedRandomGenerator(device, batch_seeds)
-        latents = rnd.randn([batch_size, net.img_channels, net.img_resolution, net.img_resolution], device=device)
+        latents = rnd.randn([batch_size, net.img_channels, net.img_resolution], device=device)
         class_labels = None
         if net.label_dim:
             class_labels = torch.eye(net.label_dim, device=device)[rnd.randint(net.label_dim, size=[batch_size], device=device)]
@@ -316,15 +319,38 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
         images = sampler_fn(net, latents, class_labels, randn_like=rnd.randn_like, **sampler_kwargs)
 
         # Save images.
-        images_np = (images * 127.5 + 128).clip(0, 255).to(torch.uint8).permute(0, 2, 3, 1).cpu().numpy()
-        for seed, image_np in zip(batch_seeds, images_np):
-            image_dir = os.path.join(outdir, f'{seed-seed%1000:06d}') if subdirs else outdir
-            os.makedirs(image_dir, exist_ok=True)
-            image_path = os.path.join(image_dir, f'{seed:06d}.png')
-            if image_np.shape[2] == 1:
-                PIL.Image.fromarray(image_np[:, :, 0], 'L').save(image_path)
-            else:
-                PIL.Image.fromarray(image_np, 'RGB').save(image_path)
+        images_np = images.cpu().numpy()
+        images_np = images_np.squeeze()
+        all_generated.append(images_np)
+
+    all_generated_paths = np.concatenate(all_generated, axis=0)
+    # Create output directory if needed
+    os.makedirs(outdir, exist_ok=True)
+    with open(os.path.join(outdir, 'generated_paths.npy'), 'wb') as f:
+        np.save(f, all_generated_paths)
+
+    # Plot a subset of time series on the same plot
+    num_samples_to_plot = 100  # Choose a small subset (e.g., 5 samples)
+    subset_indices = np.random.choice(all_generated_paths.shape[0], num_samples_to_plot, replace=False)
+    subset_ts = all_generated_paths[subset_indices]  # Select these time series
+
+    plt.figure(figsize=(10, 5))
+
+    # Plot selected time series
+    for i, ts in enumerate(subset_ts):
+        plt.plot(ts)
+
+    plt.xlabel('Time Step', fontsize=12)
+    plt.ylabel('Value', fontsize=12)
+    plt.title('Subset of Generated Time Series', fontsize=14)
+    plt.legend(loc='upper left', bbox_to_anchor=(1, 1), fontsize=10, frameon=True)  # Move legend outside
+    # Save the plot
+    plot_path = os.path.join(outdir, 'subset_plot.png')
+    plt.savefig(plot_path, bbox_inches='tight')
+    plt.close()
+    print(f"Saved subset plot to {plot_path}")
+
+
 
     # Done.
     torch.distributed.barrier()
