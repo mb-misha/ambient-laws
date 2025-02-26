@@ -22,7 +22,7 @@ from torch_utils import training_stats
 from torch_utils import misc
 import ambient_utils
 import wandb
-from dataset_gbm import GBMGenerativeDataset
+from dataset_gbm import GBMGenerativeDataset, HestonGenerativeDataset
 
 #----------------------------------------------------------------------------
 
@@ -52,6 +52,7 @@ def training_loop(
     resume_kimg         = 0,        # Start from the given training progress.
     cudnn_benchmark     = True,     # Enable torch.backends.cudnn.benchmark?
     device              = torch.device('cuda'),
+    stochastic_model    = "GBM"
 ):
     # Initialize.
     start_time = time.time()
@@ -72,7 +73,7 @@ def training_loop(
 
     # Load dataset.
     dist.print0('Loading dataset...')
-    dataset_obj = GBMGenerativeDataset(**gbm_kwargs)
+    dataset_obj = GBMGenerativeDataset(**gbm_kwargs) if stochastic_model == "GBM" else HestonGenerativeDataset(**gbm_kwargs)
     dataset_sampler = misc.InfiniteSampler(dataset=dataset_obj, rank=dist.get_rank(), num_replicas=dist.get_world_size(), seed=seed)
     dataset_iterator = iter(torch.utils.data.DataLoader(dataset=dataset_obj, sampler=dataset_sampler, batch_size=batch_gpu, **data_loader_kwargs))
 
