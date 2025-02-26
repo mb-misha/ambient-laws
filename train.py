@@ -100,6 +100,7 @@ def parse_int_list(s):
 
 
 # GBM params
+@click.option("--stochastic_model", help="Stochastic model to use.", type=str, default="GBM")
 @click.option("--n_paths", help="Number of paths for the simulation.", type=int, default=10000)
 @click.option("--n_steps", help="Number of steps in the simulation.", type=int, default=200)
 @click.option("--n_ts_features", help="Number of time-series features.", type=int, default=1)
@@ -108,6 +109,13 @@ def parse_int_list(s):
 @click.option("--sigma", help="Volatility of the asset.", type=float, default=0.2)
 @click.option("--return_log_returns", help="Whether to return log returns instead of price paths.", type=bool, default=False)
 @click.option("--normalize", help="Normalization method for the paths.", type=str, default=None)
+
+# Heston params
+@click.option("--kappa", help="Mean reversion rate.", type=float, default=1.0)
+@click.option("--theta", help="Long-term variance.", type=float, default=0.04)
+@click.option("--sigma_v", help="Volatility of volatility.", type=float, default=0.1)
+@click.option("--rho", help="Correlation between asset and volatility.", type=float, default=0.5)
+@click.option("--v0", help="Initial variance.", type=float, default=0.01)
 
 def main(**kwargs):
     """Train diffusion-based generative model using the techniques described in the
@@ -148,11 +156,20 @@ def main(**kwargs):
         return_log_returns=opts.return_log_returns,
         normalize=opts.normalize
     )
+    if opts.stochastic_model == "Heston":
+        c.gbm_kwargs.update(
+            kappa=opts.kappa,
+            theta=opts.theta,
+            sigma_v=opts.sigma_v,
+            rho=opts.rho,
+            v0=opts.v0
+        )
+    c.stochastic_model = opts.stochastic_model
     opts.dump = None
 
     # Validate dataset options.
     try:
-        dataset_obj = dataset_gbm.GBMGenerativeDataset(**c.gbm_kwargs)
+        dataset_obj = dataset_gbm.GBMGenerativeDataset(**c.gbm_kwargs) if opts.stochastic_model == "GBM" else dataset_gbm.HestonGenerativeDataset(**c.gbm_kwargs)
         dataset_name = dataset_obj.name
         c.dataset_kwargs.dataset_keep_percentage = opts.dataset_keep_percentage
         c.dataset_kwargs.resolution = dataset_obj.resolution # be explicit about dataset resolution
