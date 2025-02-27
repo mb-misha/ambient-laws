@@ -57,6 +57,7 @@ class StochasticModelDataset(Dataset):
             self.n_steps -= 1
         self.paths = np.expand_dims(self.paths, axis=1)
         assert self.paths.shape == (self.n_paths, 1, self.n_steps)
+        self.resolution = self.n_steps
 
     def __len__(self):
         return len(self.paths)
