@@ -318,12 +318,14 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
         sampler_fn = ablation_sampler if have_ablation_kwargs else edm_sampler
         images = sampler_fn(net, latents, class_labels, randn_like=rnd.randn_like, **sampler_kwargs)
         images_np = images.cpu().numpy()
-        images_np = images_np.squeeze().reshape(images_np.shape[0]*images_np.shape[-2], images_np.shape[-1])
+        images_np = images_np.squeeze().reshape(-1, images_np.shape[-1])
         all_generated.append(images_np)
 
     all_generated_paths = np.concatenate(all_generated, axis=0)
     # Create output directory if needed
     os.makedirs(outdir, exist_ok=True)
+    with open(os.path.join(outdir, 'generated_paths.npy'), 'wb') as f:
+        np.save(f, all_generated_paths)
 
     # Plot a subset of time series on the same plot
     num_samples_to_plot = 100  # Choose a small subset (e.g., 5 samples)
