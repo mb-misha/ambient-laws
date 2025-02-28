@@ -14,6 +14,7 @@ class GBMGenerativeDataset(Dataset):
             sigma=0.2,
             T=1.0,
             return_log_returns=False,
+            normalize=True,
     ):
         """
         Generates GBM paths with shape (n_paths, n_steps, n_ts_features).
@@ -23,6 +24,7 @@ class GBMGenerativeDataset(Dataset):
         self.return_log_returns = return_log_returns
         self.n_paths = n_paths
         self.n_steps = n_steps
+        self.normalize = normalize
         dt = T / n_steps
 
         # Simulate GBM paths
@@ -30,13 +32,18 @@ class GBMGenerativeDataset(Dataset):
 
         if return_log_returns:
             self.paths = self.compute_log_returns()
+            self.n_steps -= 1
 
         # Reshape each path into (n_steps, n_steps) by repeating along a new axis
-        # todo fix for log returns
-        self.paths = np.tile(self.paths[:, np.newaxis, :], (1, n_steps, 1))
+        m = self.n_paths//self.n_steps
+        self.paths = self.paths.reshape(m, 1, self.n_steps, self.n_steps)
 
-        self.paths = np.expand_dims(self.paths, axis=1)
-        assert self.paths.shape == (n_paths, 1, n_steps, n_steps)
+
+        # todo fix for log returns
+        # self.paths = np.tile(self.paths[:, np.newaxis, :], (1, n_steps, 1))
+
+        # self.paths = np.expand_dims(self.paths, axis=1)
+        assert self.paths.shape == (m, 1, self.n_steps, self.n_steps)
 
 
 
@@ -44,7 +51,7 @@ class GBMGenerativeDataset(Dataset):
         self.name = 'GBMGenerativeDataset'
 
         # unet compatibility
-        self.resolution = n_steps
+        self.resolution = self.n_steps
         self.num_channels = 1
         self.label_dim = 0
         self.has_labels = False
@@ -74,8 +81,11 @@ class GBMGenerativeDataset(Dataset):
         return len(self.paths)
 
     def __getitem__(self, idx):
+        ts = self.paths[idx]
+        if self.normalize:
+            ts = (ts - np.mean(self.paths)) / np.std(self.paths)
         return {
-            "image": np.array(self.paths[idx], dtype=np.float32),
+            "image": ts.copy(),
             "label": np.zeros(0, dtype=np.float32),
             'sigma': 0.0,
             'noise': np.zeros_like(self.paths[idx], dtype=np.float32),
