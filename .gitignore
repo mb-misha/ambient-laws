@@ -162,7 +162,7 @@ cython_debug/
 #.idea/
 
 
-/out_*
+/out*
 /data
 /wandb
 /.idea
