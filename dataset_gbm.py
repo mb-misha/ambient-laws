@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -22,6 +24,7 @@ class StochasticModelDataset(Dataset):
         self.n_paths = n_paths
         self.n_steps = n_steps
         self.normalize = normalize
+        self.T = T
         self.dt = T/n_steps
         assert n_ts_features == 1, "Only 1D timeseries data is supported."
         assert self.normalize in [None, 'global_zscore', 'per_path_zscore', 'global_mean']
@@ -125,6 +128,29 @@ class GBMGenerativeDataset(StochasticModelDataset):
         paths = S0 * paths.cumprod(axis=1)  # Compute cumulative product to get paths
         return paths
 
+    def __str__(self):
+        """
+        String representation of Geometric Brownian Motion model parameters.
+        """
+        params = {
+            "Model Name": self.name,
+            "Path Generation Parameters": {
+                "Number of Paths": self.n_paths,
+                "Number of Steps": self.n_steps,
+                "Time Horizon (T)": self.T,
+                "Time Step (dt)": round(self.dt, 4),
+                "Return Log Returns": self.return_log_returns,
+                "Normalization": self.normalize
+            },
+            "GBM Specific Parameters": {
+                "Initial Stock Price (S0)": self.s_price,
+                "Drift (μ)": self.mu,
+                "Volatility (σ)": self.sigma
+            }
+        }
+
+        return json.dumps(params, indent=2)
+
 
 class HestonGenerativeDataset(StochasticModelDataset):
     def __init__(
@@ -209,6 +235,33 @@ class HestonGenerativeDataset(StochasticModelDataset):
                                sigma_v * np.sqrt(variances[:, t] * dt) * Z2[:, t]
         self.variances = variances
         return prices
+
+    def __str__(self):
+        """
+        String representation of Heston model parameters.
+        """
+        params = {
+            "Model Name": self.name,
+            "Path Generation Parameters": {
+                "Number of Paths": self.n_paths,
+                "Number of Steps": self.n_steps,
+                "Time Horizon (T)": self.T,
+                "Time Step (dt)": round(self.dt, 4),
+                "Return Log Returns": self.return_log_returns,
+                "Normalization": self.normalize
+            },
+            "Heston Specific Parameters": {
+                "Initial Stock Price (S0)": self.s_price,
+                "Risk-Free Rate (μ)": self.mu,
+                "Mean Reversion Speed (κ)": self.kappa,
+                "Long-Term Variance (θ)": self.theta,
+                "Volatility of Volatility (σ_v)": self.sigma_v,
+                "Correlation (ρ)": self.rho,
+                "Initial Variance (v0)": self.v0
+            }
+        }
+
+        return json.dumps(params, indent=2)
 
 
 
