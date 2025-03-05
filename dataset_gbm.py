@@ -58,6 +58,8 @@ class StochasticModelDataset(Dataset):
         self.paths = np.expand_dims(self.paths, axis=1)
         assert self.paths.shape == (self.n_paths, 1, self.n_steps)
         self.resolution = self.n_steps
+        self.mean = np.mean(self.paths)
+        self.std = np.std(self.paths)
 
     def __len__(self):
         return len(self.paths)
@@ -65,11 +67,11 @@ class StochasticModelDataset(Dataset):
     def __getitem__(self, idx):
         ts = self.paths[idx]
         if self.normalize == 'global_zscore':
-            ts = (ts - np.mean(self.paths)) / np.std(self.paths)
+            ts = (ts - self.mean) / self.std
         elif self.normalize == 'per_path_zscore':
             ts = (ts - np.mean(ts, axis=-1, keepdims=True)) / np.std(ts, axis=-1, keepdims=True)
         elif self.normalize == 'global_mean':
-            ts = ts/np.mean(self.paths)
+            ts = ts/self.mean
         return {
             "image": ts.copy(),
             "label": np.zeros(0, dtype=np.float32),
