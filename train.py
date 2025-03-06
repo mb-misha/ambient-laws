@@ -106,7 +106,7 @@ def parse_int_list(s):
 @click.option("--n_ts_features", help="Number of time-series features.", type=int, default=1)
 @click.option("--s_price", help="Initial value of the asset price.", type=float, default=100.0)
 @click.option("--mu", help="Expected return rate of the asset.", type=float, default=0.05)
-@click.option("--sigma", help="Volatility of the asset.", type=float, default=0.2)
+@click.option("--sigma_gbm", help="Volatility of the asset.", type=float, default=0.0)
 @click.option("--return_log_returns", help="Whether to return log returns instead of price paths.", type=bool, default=False)
 @click.option("--normalize", help="Normalization method for the paths.", type=str, default=None)
 
@@ -152,7 +152,7 @@ def main(**kwargs):
         n_ts_features=opts.n_ts_features,
         s_price=opts.s_price,
         mu=opts.mu,
-        sigma=opts.sigma,
+        sigma_gbm=opts.sigma_gbm,
         return_log_returns=opts.return_log_returns,
         normalize=opts.normalize
     )
@@ -164,7 +164,7 @@ def main(**kwargs):
             rho=opts.rho,
             v0=opts.v0
         )
-        c.gbm_kwargs.pop("sigma")
+        c.gbm_kwargs.pop("sigma_gbm")
     c.stochastic_model = opts.stochastic_model
     opts.dump = None
 

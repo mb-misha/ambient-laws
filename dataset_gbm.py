@@ -91,7 +91,7 @@ class GBMGenerativeDataset(StochasticModelDataset):
             n_ts_features=1,
             s_price=100.0,
             mu=0.05,
-            sigma=0.2,
+            sigma_gbm=0.2,
             T=1.0,
             return_log_returns=False,
             normalize=None,
@@ -103,7 +103,7 @@ class GBMGenerativeDataset(StochasticModelDataset):
         super().__init__(n_paths, n_steps, n_ts_features, T, return_log_returns, normalize)
         self.s_price = s_price
         self.mu = mu
-        self.sigma = sigma
+        self.sigma_gbm = sigma_gbm
         self.name = 'GBMGenerativeDataset'
         
         # Simulate GBM paths
@@ -114,7 +114,7 @@ class GBMGenerativeDataset(StochasticModelDataset):
         """
         Simulates Geometric Brownian Motion (GBM) paths.
         """
-        return self.simulate_gbm_paths(self.n_paths, self.n_steps-1, self.s_price, self.mu, self.sigma, self.dt)
+        return self.simulate_gbm_paths(self.n_paths, self.n_steps - 1, self.s_price, self.mu, self.sigma_gbm, self.dt)
         
     def simulate_gbm_paths(self, n_paths, n_steps, S0, mu, sigma, dt):
         """
@@ -145,7 +145,7 @@ class GBMGenerativeDataset(StochasticModelDataset):
             "GBM Specific Parameters": {
                 "Initial Stock Price (S0)": self.s_price,
                 "Drift (μ)": self.mu,
-                "Volatility (σ)": self.sigma
+                "Volatility (σ)": self.sigma_gbm
             }
         }
 

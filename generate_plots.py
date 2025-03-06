@@ -37,7 +37,7 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
             n_paths=n_paths,
             n_steps=n_steps,
             mu=mu,
-            sigma=sigma,
+            sigma_gbm=sigma,
             return_log_returns=return_log_returns)
     else:
         dataset = HestonGenerativeDataset(
