@@ -38,7 +38,9 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
             n_steps=n_steps,
             mu=mu,
             sigma_gbm=sigma,
-            return_log_returns=return_log_returns)
+            return_log_returns=return_log_returns,
+            normalize=normalization,
+        )
     else:
         dataset = HestonGenerativeDataset(
             mu=mu,
@@ -47,6 +49,7 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
             theta=theta,
             v0=v0,
             return_log_returns=return_log_returns,
+            normalize=normalization,
         )
     real = dataset.paths.squeeze()
     generated = np.load(generated_filepath)
@@ -117,7 +120,7 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
     axes[3, 0].legend()
     axes[3, 0].set_title("KDE of Log Returns")
 
-    params_str = str(dataset) + "\n" + f"K={K}\n" + f"Training set size: ({n_training_paths}, {n_steps})\n\n"
+    params_str = str(dataset) + "\n" + f"K={K}\n" + f"Training set size: ({n_training_paths}, {n_steps-1})\n\n"
 
     if stochastic_model == 'Heston':
         option_pricing_str = (
@@ -167,7 +170,7 @@ if __name__ == "__main__":
         normalization=dataset_args['normalize'],
         stochastic_model=params['stochastic_model'],
         mu=dataset_args['mu'],
-        sigma=dataset_args.get('sigma', None),
+        sigma=dataset_args.get('sigma_gbm', None),
         theta=dataset_args.get('theta', None),
         v0=dataset_args.get('v0', None),
         n_steps=dataset_args['n_steps'],
