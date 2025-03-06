@@ -110,6 +110,7 @@ class Conv1d(torch.nn.Module):
         self.weight = torch.nn.Parameter(weight_init([out_channels, in_channels, kernel], **init_kwargs) * init_weight) if kernel else None
         self.bias = torch.nn.Parameter(weight_init([out_channels], **init_kwargs) * init_bias) if kernel and bias else None
         f = torch.as_tensor(resample_filter, dtype=torch.float32)
+        f = f.unsqueeze(0).unsqueeze(1) / f.sum().square()
         self.register_buffer('resample_filter', f if up or down else None)
 
     def forward(self, x):
@@ -187,6 +188,7 @@ class UNetBlock1D(torch.nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.emb_channels = emb_channels
+        self.num_heads = 0 if not attention else num_heads if num_heads is not None else out_channels // channels_per_head
         self.dropout = dropout
         self.skip_scale = skip_scale
         self.adaptive_scale = adaptive_scale
@@ -202,6 +204,11 @@ class UNetBlock1D(torch.nn.Module):
             kernel = 1 if resample_proj or out_channels != in_channels else 0
             self.skip = Conv1d(in_channels=in_channels, out_channels=out_channels, kernel=kernel, up=up, down=down, resample_filter=resample_filter, **init)
 
+        if self.num_heads:
+            self.norm2 = GroupNorm(num_channels=out_channels, eps=eps)
+            self.qkv = Conv1d(in_channels=out_channels, out_channels=out_channels*3, kernel=1, **(init_attn if init_attn is not None else init))
+            self.proj = Conv1d(in_channels=out_channels, out_channels=out_channels, kernel=1, **init_zero)
+
     def forward(self, x, emb):
         orig = x
         x = self.conv0(silu(self.norm0(x)))
@@ -216,6 +223,13 @@ class UNetBlock1D(torch.nn.Module):
         x = self.conv1(torch.nn.functional.dropout(x, p=self.dropout, training=self.training))
         x = x.add_(self.skip(orig) if self.skip is not None else orig)
         x = x * self.skip_scale
+
+        if self.num_heads:
+            q, k, v = self.qkv(self.norm2(x)).reshape(x.shape[0] * self.num_heads, x.shape[1] // self.num_heads, 3, -1).unbind(2)
+            w = AttentionOp.apply(q, k)
+            a = torch.einsum('nqk,nck->ncq', w, v)
+            x = self.proj(a.reshape(*x.shape)).add_(x)
+            x = x * self.skip_scale
         return x
 
 
@@ -330,6 +344,7 @@ class SongUNet1D(torch.nn.Module, PyTorchModelHubMixin):
         channel_mult        = [1,2,2,2],   # Per-resolution multipliers for the number of channels
         channel_mult_emb    = 4,           # Multiplier for the dimensionality of the embedding vector
         num_blocks          = 4,           # Number of residual blocks per resolution
+        attn_resolutions    = [16],        # List of resolutions with self-attention
         dropout             = 0.10,        # Dropout probability of intermediate activations
         label_dropout       = 0,           # Dropout probability of class labels for classifier-free guidance
         embedding_type      = 'positional', # Timestep embedding type: 'positional' for DDPM++, 'fourier' for NCSN++
@@ -348,10 +363,11 @@ class SongUNet1D(torch.nn.Module, PyTorchModelHubMixin):
         noise_channels = model_channels * channel_mult_noise
         init = dict(init_mode='xavier_uniform')
         init_zero = dict(init_mode='xavier_uniform', init_weight=1e-5)
+        init_attn = dict(init_mode='xavier_uniform', init_weight=np.sqrt(0.2))
         block_kwargs = dict(
-            emb_channels=emb_channels, dropout=dropout, skip_scale=np.sqrt(0.5), eps=1e-6,
+            emb_channels=emb_channels, num_heads=1, dropout=dropout, skip_scale=np.sqrt(0.5), eps=1e-6,
             resample_filter=resample_filter, resample_proj=True, adaptive_scale=False,
-            init=init, init_zero=init_zero,
+            init=init, init_zero=init_zero, init_attn=init_attn,
         )
 
         # Mapping network
@@ -382,7 +398,8 @@ class SongUNet1D(torch.nn.Module, PyTorchModelHubMixin):
             for idx in range(num_blocks):
                 cin = cout
                 cout = model_channels * mult
-                self.enc[f'{res}_block{idx}'] = UNetBlock1D(in_channels=cin, out_channels=cout, **block_kwargs)
+                attn = (res in attn_resolutions)
+                self.enc[f'{res}_block{idx}'] = UNetBlock1D(in_channels=cin, out_channels=cout, attention=attn, **block_kwargs)
         skips = [block.out_channels for name, block in self.enc.items() if 'aux' not in name]
 
         # Decoder
@@ -390,14 +407,15 @@ class SongUNet1D(torch.nn.Module, PyTorchModelHubMixin):
         for level, mult in reversed(list(enumerate(channel_mult))):
             res = data_length >> level
             if level == len(channel_mult) - 1:
-                self.dec[f'{res}_in0'] = UNetBlock1D(in_channels=cout, out_channels=cout, **block_kwargs)
+                self.dec[f'{res}_in0'] = UNetBlock1D(in_channels=cout, out_channels=cout, attention=True, **block_kwargs)
                 self.dec[f'{res}_in1'] = UNetBlock1D(in_channels=cout, out_channels=cout, **block_kwargs)
             else:
                 self.dec[f'{res}_up'] = UNetBlock1D(in_channels=cout, out_channels=cout, up=True, **block_kwargs)
             for idx in range(num_blocks + 1):
                 cin = cout + skips.pop()
                 cout = model_channels * mult
-                self.dec[f'{res}_block{idx}'] = UNetBlock1D(in_channels=cin, out_channels=cout, **block_kwargs)
+                attn = (idx == num_blocks and res in attn_resolutions)
+                self.dec[f'{res}_block{idx}'] = UNetBlock1D(in_channels=cin, out_channels=cout, attention=attn, **block_kwargs)
             if decoder_type == 'skip' or level == 0:
                 if decoder_type == 'skip' and level < len(channel_mult) - 1:
                     self.dec[f'{res}_aux_up'] = Conv1d(in_channels=out_channels, out_channels=out_channels, kernel=0, up=True, resample_filter=resample_filter)
