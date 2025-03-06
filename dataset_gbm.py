@@ -14,6 +14,9 @@ class StochasticModelDataset(Dataset):
         T=1.0,
         return_log_returns=False,
         normalize=None,
+        corruption_probability=0.0,
+        sigma=0.0,
+        noise_type='ve',
     ):
         """
         Base class for stochastic model path generators with shape (n_paths, n_steps, n_ts_features).
@@ -26,6 +29,9 @@ class StochasticModelDataset(Dataset):
         self.normalize = normalize
         self.T = T
         self.dt = T/n_steps
+        self.corruption_probability = corruption_probability
+        self.sigma = sigma
+        self.noise_type = noise_type
         assert n_ts_features == 1, "Only 1D timeseries data is supported."
         assert self.normalize in [None, 'global_zscore', 'per_path_zscore', 'global_mean']
         
@@ -75,12 +81,28 @@ class StochasticModelDataset(Dataset):
             ts = (ts - np.mean(ts, axis=-1, keepdims=True)) / np.std(ts, axis=-1, keepdims=True)
         elif self.normalize == 'global_mean':
             ts = ts/self.mean
+
+        if np.random.rand() > self.corruption_probability:
+            noise_level = 0.0
+            noise = np.zeros_like(ts)
+        else:
+
+            if self.sigma > 0:
+                if self.noise_type == 've':
+                    noise = np.random.normal(size=ts.shape)
+                    ts += self.sigma*noise
+                else:
+                    raise NotImplementedError
+            else:
+                noise = np.zeros_like(ts)
+            noise_level = self.sigma
+
         return {
             "image": ts.copy(),
             "label": np.zeros(0, dtype=np.float32),
-            'sigma': 0.0,
-            'noise': np.zeros_like(self.paths[idx], dtype=np.float32),
-            'corruption_mask': np.zeros_like(self.paths[idx], dtype=np.float32),
+            'sigma': noise_level,
+            'noise': noise,
+            # 'corruption_mask': np.zeros_like(self.paths[idx], dtype=np.float32),
         }
 
 class GBMGenerativeDataset(StochasticModelDataset):
@@ -95,12 +117,13 @@ class GBMGenerativeDataset(StochasticModelDataset):
             T=1.0,
             return_log_returns=False,
             normalize=None,
+            **kwargs
     ):
         """
         Generates GBM paths with shape (n_paths, n_steps, n_ts_features).
         Can optionally return log returns instead of price paths.
         """
-        super().__init__(n_paths, n_steps, n_ts_features, T, return_log_returns, normalize)
+        super().__init__(n_paths, n_steps, n_ts_features, T, return_log_returns, normalize, **kwargs)
         self.s_price = s_price
         self.mu = mu
         self.sigma_gbm = sigma_gbm
@@ -168,12 +191,13 @@ class HestonGenerativeDataset(StochasticModelDataset):
             T=1.0,
             return_log_returns=False,
             normalize=None,
+            **kwargs
     ):
         """
         Generates Heston model paths with shape (n_paths, n_steps, n_ts_features).
         Can optionally return log returns instead of price paths.
         """
-        super().__init__(n_paths, n_steps, n_ts_features, T, return_log_returns, normalize)
+        super().__init__(n_paths, n_steps, n_ts_features, T, return_log_returns, normalize, **kwargs)
         self.s_price = s_price
         self.mu = mu
         self.kappa = kappa
