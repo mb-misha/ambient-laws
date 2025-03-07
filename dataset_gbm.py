@@ -167,8 +167,8 @@ class GBMGenerativeDataset(StochasticModelDataset):
             },
             "GBM Specific Parameters": {
                 "Initial Stock Price (S0)": self.s_price,
-                "Drift (μ)": self.mu,
-                "Volatility (σ)": self.sigma_gbm
+                "Drift (mu)": self.mu,
+                "Volatility (sigma)": self.sigma_gbm
             }
         }
 
@@ -276,11 +276,11 @@ class HestonGenerativeDataset(StochasticModelDataset):
             },
             "Heston Specific Parameters": {
                 "Initial Stock Price (S0)": self.s_price,
-                "Risk-Free Rate (μ)": self.mu,
-                "Mean Reversion Speed (κ)": self.kappa,
-                "Long-Term Variance (θ)": self.theta,
-                "Volatility of Volatility (σ_v)": self.sigma_v,
-                "Correlation (ρ)": self.rho,
+                "Risk-Free Rate (mu)": self.mu,
+                "Mean Reversion Speed (kappa)": self.kappa,
+                "Long-Term Variance (theta)": self.theta,
+                "Volatility of Volatility (sigma_v)": self.sigma_v,
+                "Correlation (rho)": self.rho,
                 "Initial Variance (v0)": self.v0
             }
         }
