@@ -72,7 +72,8 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
     # Price options
     estimated_price_real, std_err_real, _ = price_option(paths=real_gbm.T, K=K, r=mu, T=1.0, M=n_paths)
     estimated_price_gen, std_err_gen, _ = price_option(paths=generated_gbm.T, K=K, r=mu, T=1.0, M=n_paths)
-    bs_price = price_option_bs(S0=100, K=K, r=mu, sigma=sigma, T=1.0)
+    if stochastic_model == 'GBM':
+        bs_price = price_option_bs(S0=100, K=K, r=mu, sigma=sigma, T=1.0)
 
 
     # Create figure with subplots
