@@ -14,6 +14,9 @@ class StochasticModelDataset(Dataset):
         T=1.0,
         return_log_returns=False,
         normalize=None,
+        corruption_probability=0.0,
+        sigma=0.0,
+        noise_type='ve',
     ):
         """
         Base class for stochastic model path generators with shape (n_paths, n_steps, n_ts_features).
@@ -26,6 +29,9 @@ class StochasticModelDataset(Dataset):
         self.normalize = normalize
         self.T = T
         self.dt = T/n_steps
+        self.corruption_probability = corruption_probability
+        self.sigma = sigma
+        self.noise_type = noise_type
         assert n_ts_features == 1, "Only 1D timeseries data is supported."
         assert self.normalize in [None, 'global_zscore', 'per_path_zscore', 'global_mean']
         
@@ -75,12 +81,28 @@ class StochasticModelDataset(Dataset):
             ts = (ts - np.mean(ts, axis=-1, keepdims=True)) / np.std(ts, axis=-1, keepdims=True)
         elif self.normalize == 'global_mean':
             ts = ts/self.mean
+
+        if np.random.rand() > self.corruption_probability:
+            noise_level = 0.0
+            noise = np.zeros_like(ts)
+        else:
+
+            if self.sigma > 0:
+                if self.noise_type == 've':
+                    noise = np.random.normal(size=ts.shape)
+                    ts += self.sigma*noise
+                else:
+                    raise NotImplementedError
+            else:
+                noise = np.zeros_like(ts)
+            noise_level = self.sigma
+
         return {
             "image": ts.copy(),
             "label": np.zeros(0, dtype=np.float32),
-            'sigma': 0.0,
-            'noise': np.zeros_like(self.paths[idx], dtype=np.float32),
-            'corruption_mask': np.zeros_like(self.paths[idx], dtype=np.float32),
+            'sigma': noise_level,
+            'noise': noise,
+            # 'corruption_mask': np.zeros_like(self.paths[idx], dtype=np.float32),
         }
 
 class GBMGenerativeDataset(StochasticModelDataset):
@@ -91,19 +113,20 @@ class GBMGenerativeDataset(StochasticModelDataset):
             n_ts_features=1,
             s_price=100.0,
             mu=0.05,
-            sigma=0.2,
+            sigma_gbm=0.2,
             T=1.0,
             return_log_returns=False,
             normalize=None,
+            **kwargs
     ):
         """
         Generates GBM paths with shape (n_paths, n_steps, n_ts_features).
         Can optionally return log returns instead of price paths.
         """
-        super().__init__(n_paths, n_steps, n_ts_features, T, return_log_returns, normalize)
+        super().__init__(n_paths, n_steps, n_ts_features, T, return_log_returns, normalize, **kwargs)
         self.s_price = s_price
         self.mu = mu
-        self.sigma = sigma
+        self.sigma_gbm = sigma_gbm
         self.name = 'GBMGenerativeDataset'
         
         # Simulate GBM paths
@@ -114,7 +137,7 @@ class GBMGenerativeDataset(StochasticModelDataset):
         """
         Simulates Geometric Brownian Motion (GBM) paths.
         """
-        return self.simulate_gbm_paths(self.n_paths, self.n_steps-1, self.s_price, self.mu, self.sigma, self.dt)
+        return self.simulate_gbm_paths(self.n_paths, self.n_steps - 1, self.s_price, self.mu, self.sigma_gbm, self.dt)
         
     def simulate_gbm_paths(self, n_paths, n_steps, S0, mu, sigma, dt):
         """
@@ -144,8 +167,8 @@ class GBMGenerativeDataset(StochasticModelDataset):
             },
             "GBM Specific Parameters": {
                 "Initial Stock Price (S0)": self.s_price,
-                "Drift (μ)": self.mu,
-                "Volatility (σ)": self.sigma
+                "Drift (mu)": self.mu,
+                "Volatility (sigma)": self.sigma_gbm
             }
         }
 
@@ -168,12 +191,13 @@ class HestonGenerativeDataset(StochasticModelDataset):
             T=1.0,
             return_log_returns=False,
             normalize=None,
+            **kwargs
     ):
         """
         Generates Heston model paths with shape (n_paths, n_steps, n_ts_features).
         Can optionally return log returns instead of price paths.
         """
-        super().__init__(n_paths, n_steps, n_ts_features, T, return_log_returns, normalize)
+        super().__init__(n_paths, n_steps, n_ts_features, T, return_log_returns, normalize, **kwargs)
         self.s_price = s_price
         self.mu = mu
         self.kappa = kappa
@@ -252,11 +276,11 @@ class HestonGenerativeDataset(StochasticModelDataset):
             },
             "Heston Specific Parameters": {
                 "Initial Stock Price (S0)": self.s_price,
-                "Risk-Free Rate (μ)": self.mu,
-                "Mean Reversion Speed (κ)": self.kappa,
-                "Long-Term Variance (θ)": self.theta,
-                "Volatility of Volatility (σ_v)": self.sigma_v,
-                "Correlation (ρ)": self.rho,
+                "Risk-Free Rate (mu)": self.mu,
+                "Mean Reversion Speed (kappa)": self.kappa,
+                "Long-Term Variance (theta)": self.theta,
+                "Volatility of Volatility (sigma_v)": self.sigma_v,
+                "Correlation (rho)": self.rho,
                 "Initial Variance (v0)": self.v0
             }
         }
