@@ -126,13 +126,15 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
     if stochastic_model == 'Heston':
         option_pricing_str = (
                f"Real Option Price={estimated_price_real:.3f} ± {1.96 * std_err_real:.3f}\n"
-               f"Generated Option Price={estimated_price_gen:.3f} ± {1.96 * std_err_gen:.3f}"
+               f"Generated Option Price={estimated_price_gen:.3f} ± {1.96 * std_err_gen:.3f}\n"
+               f"Relative error: {100 * (estimated_price_gen - estimated_price_real) / estimated_price_real:.2f}%"
         )
     else:
         option_pricing_str = (
             f"BS Price={bs_price:.3f}\n"
             f"Real Option Price={estimated_price_real:.3f} ± {1.96 * std_err_real:.3f}\n"
-            f"Generated Option Price={estimated_price_gen:.3f} ± {1.96 * std_err_gen:.3f}"
+            f"Generated Option Price={estimated_price_gen:.3f} ± {1.96 * std_err_gen:.3f}\n"
+            f"Relative error: {100 * (estimated_price_gen - bs_price) / bs_price:.2f}%"
         )
 
     axes[3, 1].text(0.5, 0.5, params_str+option_pricing_str, fontsize=12, ha='center', va='center', bbox={"facecolor": "white", "alpha": 0.5, "pad": 5})
