@@ -82,6 +82,7 @@ class StochasticModelDataset(Dataset):
         elif self.normalize == 'global_mean':
             ts = ts/self.mean
 
+        sigma_n = None
         if np.random.rand() > self.corruption_probability:
             noise_level = 0.0
             noise = np.zeros_like(ts)
@@ -91,10 +92,19 @@ class StochasticModelDataset(Dataset):
                 if self.noise_type == 've':
                     noise = np.random.normal(size=ts.shape)
                     ts += self.sigma*noise
+                elif self.noise_type == 've_gbm':
+                    noise = np.random.normal(size=ts.shape)
+                    sigma_n = np.sqrt((self.sigma/self.sigma_gbm)**2 - 1)
+                    ts += sigma_n*noise
                 else:
                     raise NotImplementedError
             else:
                 noise = np.zeros_like(ts)
+            if sigma_n is not None:
+                noise_level = sigma_n
+            else:
+                noise_level = self.sigma
+        if self.noise_type == 'denoise_only':
             noise_level = self.sigma
 
         return {
@@ -102,7 +112,6 @@ class StochasticModelDataset(Dataset):
             "label": np.zeros(0, dtype=np.float32),
             'sigma': noise_level,
             'noise': noise,
-            # 'corruption_mask': np.zeros_like(self.paths[idx], dtype=np.float32),
         }
 
 class GBMGenerativeDataset(StochasticModelDataset):
@@ -169,6 +178,11 @@ class GBMGenerativeDataset(StochasticModelDataset):
                 "Initial Stock Price (S0)": self.s_price,
                 "Drift (mu)": self.mu,
                 "Volatility (sigma)": self.sigma_gbm
+            },
+            "Extra noise": {
+                "sigma": self.sigma,
+                "corr prob": self.corruption_probability,
+                "noise type": self.noise_type,
             }
         }
 
@@ -282,6 +296,11 @@ class HestonGenerativeDataset(StochasticModelDataset):
                 "Volatility of Volatility (sigma_v)": self.sigma_v,
                 "Correlation (rho)": self.rho,
                 "Initial Variance (v0)": self.v0
+            },
+            "Extra noise": {
+                "sigma": self.sigma,
+                "corr prob": self.corruption_probability,
+                "noise type": self.noise_type,
             }
         }
 

@@ -89,6 +89,7 @@ def parse_int_list(s):
 @click.option("--corruption_probability", help="Controls what percentage of images should be corrupted.", type=float, default=0.0)
 @click.option("--sigma", help="How much noise to add to the corrupted images.", type=float, default=0.0)
 @click.option('--dataset_keep_percentage', help='Limit training samples.', type=float, default=1.0, show_default=True)
+@click.option("--noise_type", help="Type of noise to add to corrupt images.", type=str)
 
 # Consistency params
 @click.option("--consistency_batch_size", help="Batch size for the consistency loss.", type=int, default=32)
@@ -154,7 +155,10 @@ def main(**kwargs):
         mu=opts.mu,
         sigma_gbm=opts.sigma_gbm,
         return_log_returns=opts.return_log_returns,
-        normalize=opts.normalize
+        normalize=opts.normalize,
+        noise_type=opts.noise_type,
+        sigma=opts.sigma,
+        corruption_probability=opts.corruption_probability,
     )
     if opts.stochastic_model == "Heston":
         c.gbm_kwargs.update(
