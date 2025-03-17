@@ -29,7 +29,7 @@ def price_option_bs(S0, K, r, sigma, T):
     return S0 * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
 
 
-def process_data(generated_filepath, normalization, stochastic_model, mu, sigma, theta, v0, n_steps, return_log_returns, n_training_paths, n_paths=100000, K=110):
+def process_data(generated_filepath, normalization, stochastic_model, mu, sigma, theta, v0, n_steps, return_log_returns, n_training_paths, noise_sigma, n_paths=100000, K=110, **kwargs):
     outdir = os.path.dirname(generated_filepath)
     # Generate dataset
     if stochastic_model == 'GBM':
@@ -40,6 +40,8 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
             sigma_gbm=sigma,
             return_log_returns=return_log_returns,
             normalize=normalization,
+            sigma=noise_sigma,
+            **kwargs
         )
     else:
         dataset = HestonGenerativeDataset(
@@ -50,6 +52,8 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
             v0=v0,
             return_log_returns=return_log_returns,
             normalize=normalization,
+            sigma=noise_sigma,
+            **kwargs
         )
     real = dataset.paths.squeeze()
     generated = np.load(generated_filepath)
@@ -179,6 +183,9 @@ if __name__ == "__main__":
         n_steps=dataset_args['n_steps'],
         return_log_returns=dataset_args['return_log_returns'],
         n_training_paths=dataset_args['n_paths'],
+        noise_sigma=dataset_args['sigma'],
+        corruption_probability=dataset_args['corruption_probability'],
+        noise_type=dataset_args['noise_type'],
     )
 
 
