@@ -123,6 +123,9 @@ def parse_int_list(s):
 @click.option("--sigma_j", help="Volatility of the jump size.", type=float, default=0.2)
 @click.option("--lamb", help="Jump intensity.", type=float, default=5.0)
 
+# Market data params
+@click.option('--symbol', help='Symbol of the stock to use.', type=str, default='AAPL')
+
 def main(**kwargs):
     """Train diffusion-based generative model using the techniques described in the
     paper "Elucidating the Design Space of Diffusion-Based Generative Models".
@@ -180,6 +183,13 @@ def main(**kwargs):
             sigma_j=opts.sigma_j,
             lamb=opts.lamb
         )
+    elif opts.stochastic_model == "MarketData":
+        c.gbm_kwargs.update(
+            symbol=opts.symbol
+        )
+        c.gbm_kwargs.pop('s_price')
+        c.gbm_kwargs.pop('mu')
+        c.gbm_kwargs.pop('sigma_gbm')
     c.stochastic_model = opts.stochastic_model
     opts.dump = None
 
@@ -191,6 +201,8 @@ def main(**kwargs):
             dataset_obj = dataset_gbm.HestonGenerativeDataset(**c.gbm_kwargs)
         elif opts.stochastic_model == "MJD":
             dataset_obj = dataset_gbm.MJDGenerativeDataset(**c.gbm_kwargs)
+        elif opts.stochastic_model == "MarketData":
+            dataset_obj = dataset_gbm.RealMarketDataset(**c.gbm_kwargs)
         dataset_name = dataset_obj.name
         c.dataset_kwargs.dataset_keep_percentage = opts.dataset_keep_percentage
         c.dataset_kwargs.resolution = dataset_obj.resolution # be explicit about dataset resolution
