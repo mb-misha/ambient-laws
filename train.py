@@ -118,6 +118,11 @@ def parse_int_list(s):
 @click.option("--rho", help="Correlation between asset and volatility.", type=float, default=0.5)
 @click.option("--v0", help="Initial variance.", type=float, default=0.01)
 
+# MJD params
+@click.option("--mu_j", help="Expected jump size.", type=float, default=0.01)
+@click.option("--sigma_j", help="Volatility of the jump size.", type=float, default=0.2)
+@click.option("--lamb", help="Jump intensity.", type=float, default=5.0)
+
 def main(**kwargs):
     """Train diffusion-based generative model using the techniques described in the
     paper "Elucidating the Design Space of Diffusion-Based Generative Models".
@@ -169,12 +174,23 @@ def main(**kwargs):
             v0=opts.v0
         )
         c.gbm_kwargs.pop("sigma_gbm")
+    elif opts.stochastic_model == "MJD":
+        c.gbm_kwargs.update(
+            mu_j=opts.mu_j,
+            sigma_j=opts.sigma_j,
+            lamb=opts.lamb
+        )
     c.stochastic_model = opts.stochastic_model
     opts.dump = None
 
     # Validate dataset options.
     try:
-        dataset_obj = dataset_gbm.GBMGenerativeDataset(**c.gbm_kwargs) if opts.stochastic_model == "GBM" else dataset_gbm.HestonGenerativeDataset(**c.gbm_kwargs)
+        if opts.stochastic_model == "GBM":
+            dataset_obj = dataset_gbm.GBMGenerativeDataset(**c.gbm_kwargs)
+        elif opts.stochastic_model == "Heston":
+            dataset_obj = dataset_gbm.HestonGenerativeDataset(**c.gbm_kwargs)
+        elif opts.stochastic_model == "MJD":
+            dataset_obj = dataset_gbm.MJDGenerativeDataset(**c.gbm_kwargs)
         dataset_name = dataset_obj.name
         c.dataset_kwargs.dataset_keep_percentage = opts.dataset_keep_percentage
         c.dataset_kwargs.resolution = dataset_obj.resolution # be explicit about dataset resolution

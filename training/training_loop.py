@@ -22,7 +22,7 @@ from torch_utils import training_stats
 from torch_utils import misc
 import ambient_utils
 import wandb
-from dataset_gbm import GBMGenerativeDataset, HestonGenerativeDataset
+from dataset_gbm import GBMGenerativeDataset, HestonGenerativeDataset, MJDGenerativeDataset
 
 #----------------------------------------------------------------------------
 
@@ -73,7 +73,15 @@ def training_loop(
 
     # Load dataset.
     dist.print0('Loading dataset...')
-    dataset_obj = GBMGenerativeDataset(**gbm_kwargs) if stochastic_model == "GBM" else HestonGenerativeDataset(**gbm_kwargs)
+    if stochastic_model == "GBM":
+        dataset_obj = GBMGenerativeDataset(**gbm_kwargs)
+    elif stochastic_model == "Heston":
+        dataset_obj = HestonGenerativeDataset(**gbm_kwargs)
+    elif stochastic_model == "MJD":
+        dataset_obj = MJDGenerativeDataset(**gbm_kwargs)
+    else:
+        raise NotImplementedError
+
     dataset_sampler = misc.InfiniteSampler(dataset=dataset_obj, rank=dist.get_rank(), num_replicas=dist.get_world_size(), seed=seed)
     dataset_iterator = iter(torch.utils.data.DataLoader(dataset=dataset_obj, sampler=dataset_sampler, batch_size=batch_gpu, **data_loader_kwargs))
 

@@ -306,6 +306,103 @@ class HestonGenerativeDataset(StochasticModelDataset):
 
         return json.dumps(params, indent=2)
 
+class MJDGenerativeDataset(StochasticModelDataset):
+    def __init__(
+            self,
+            n_paths=10000,
+            n_steps=200,
+            n_ts_features=1,
+            s_price=100.0,
+            mu=0.05,
+            sigma_gbm=0.2,
+            lamb=0.1,
+            mu_j=0.1,
+            sigma_j=0.1,
+            T=1.0,
+            return_log_returns=False,
+            normalize=None,
+            **kwargs
+    ):
+        """
+        Generates Merton Jump Diffusion model paths with shape (n_paths, n_steps, n_ts_features).
+        Can optionally return log returns instead of price paths.
+        """
+        super().__init__(n_paths, n_steps, n_ts_features, T, return_log_returns, normalize, **kwargs)
+        self.s_price = s_price
+        self.mu = mu
+        self.sigma_gbm = sigma_gbm
+        self.lamb = lamb
+        self.mu_j = mu_j
+        self.sigma_j = sigma_j
+        self.name = 'MJDGenerativeDataset'
+
+        # Simulate MJD paths
+        self.paths = self.simulate_paths()
+        self.process_paths()
+
+    def simulate_paths(self):
+        """
+        Simulates Merton Jump Diffusion model paths.
+        """
+        return self.simulate_mjd_paths(
+            self.n_paths, self.n_steps-1, self.s_price, self.mu,
+            self.sigma_gbm, self.lamb, self.mu_j, self.sigma_j, self.dt
+        )
+
+    def simulate_mjd_paths(self, n_paths, n_steps, S0, mu, sigma, lamb, mu_j, sigma_j, dt):
+        """
+        Simulates the Merton Jump Diffusion model.
+        """
+        # Precompute constants
+        k = np.exp(mu_j + 0.5 * sigma_j**2) - 1
+        drift = (mu - lamb * k - 0.5 * sigma**2) * dt
+
+        # Initialize asset prices array
+        St = np.zeros((n_steps + 1, n_paths))
+        St[0] = S0
+
+        for i in range(1, n_steps + 1):
+            # Simulate Poisson jumps
+            N_t = np.random.poisson(lamb * dt, n_paths)
+            # Simulate jump sizes
+            J_t = np.random.normal(mu_j, sigma_j, (n_paths,)) * N_t
+            # Simulate diffusion component
+            diffusion = drift + sigma * np.sqrt(dt) * np.random.normal(0, 1, n_paths)
+            # Update asset prices
+            St[i] = St[i - 1] * np.exp(diffusion + J_t)
+
+        return St.T
+
+    def __str__(self):
+        """
+        String representation of Merton Jump Diffusion model parameters.
+        """
+        params = {
+            "Model Name": self.name,
+            "Path Generation Parameters": {
+                "Number of Paths": self.n_paths,
+                "Number of Steps": self.n_steps,
+                "Time Horizon (T)": self.T,
+                "Time Step (dt)": round(self.dt, 4),
+                "Return Log Returns": self.return_log_returns,
+                "Normalization": self.normalize
+            },
+            "MJD Specific Parameters": {
+                "Initial Stock Price (S0)": self.s_price,
+                "Risk-Free Rate (mu)": self.mu,
+                "Volatility (sigma)": self.sigma_gbm,
+                "Jump Intensity (lambda)": self.lamb,
+                "Jump Mean (mu_j)": self.mu_j,
+                "Jump Volatility (sigma_j)": self.sigma_j
+            },
+            "Extra noise": {
+                "sigma": self.sigma,
+                "corr prob": self.corruption_probability,
+                "noise type": self.noise_type,
+            }
+        }
+
+        return json.dumps(params, indent=2)
 
 
 def estimate_parameters(paths, dt):
@@ -330,3 +427,58 @@ def reverse_log_return(log_returns, s0):
         reconstructed_prices[:, i] = reconstructed_prices[:, i - 1] * np.exp(log_returns[:, i - 1])
     return reconstructed_prices
 
+def estimate_mjd_parameters(series, dt, threshold=3):
+    """
+    Estimate parameters of the Merton Jump Diffusion model from a price series.
+
+    Parameters:
+    - series: Time series of asset prices.
+    - dt: Time step size.
+    - threshold: Threshold (in standard deviations) to identify jumps.
+
+    Returns:
+    - params: Dictionary containing estimated parameters.
+    """
+    # Calculate log returns
+    log_returns = np.diff(np.log(series))
+    n = len(log_returns)
+
+    # Calculate statistics of log returns
+    mu_hat = np.mean(log_returns)
+    sigma_hat = np.std(log_returns)
+
+    # Identify jumps
+    jump_indices = np.where(np.abs(log_returns - mu_hat) > threshold * sigma_hat)[0]
+    no_jump_indices = np.where(np.abs(log_returns - mu_hat) <= threshold * sigma_hat)[0]
+
+    # Estimate jump intensity (lambda)
+    lamb_hat = len(jump_indices) / (n * dt)
+
+    # Estimate jump sizes
+    if len(jump_indices) > 0:
+        jump_sizes = log_returns[jump_indices]
+        mu_j_hat = np.mean(jump_sizes)
+        sigma_j_hat = np.std(jump_sizes)
+    else:
+        mu_j_hat = 0
+        sigma_j_hat = 0
+
+    # Adjusted drift estimation
+    # Remove jumps to estimate diffusion component
+    diffusion_returns = log_returns[no_jump_indices]
+    mu_diffusion_hat = np.mean(diffusion_returns) / dt
+    sigma_diffusion_hat = np.std(diffusion_returns) / np.sqrt(dt)
+
+    # Adjust drift for jump component
+    k_hat = np.exp(mu_j_hat + 0.5 * sigma_j_hat**2) - 1
+    mu_hat_adj = mu_diffusion_hat + lamb_hat * k_hat
+
+    params = {
+        "mu": mu_hat_adj,
+        "sigma": sigma_diffusion_hat,
+        "lamb": lamb_hat,
+        "mu_j": None if len(jump_indices) == 0 else mu_j_hat,
+        "sigma_j": None if len(jump_indices) <= 1 else sigma_j_hat,
+    }
+
+    return params
