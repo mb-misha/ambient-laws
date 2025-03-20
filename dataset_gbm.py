@@ -406,12 +406,13 @@ class MJDGenerativeDataset(StochasticModelDataset):
         return json.dumps(params, indent=2)
 
 class RealMarketDataset(StochasticModelDataset):
-    def __init__(self, symbol, **kwargs):
+    def __init__(self, symbol, sliding_window='non_overlapping', **kwargs):
         """
         Loads real market data for a given symbol.
         """
         super().__init__(**kwargs)
         self.symbol = symbol
+        self.sliding_window = sliding_window
         self.paths = self.load_data()
         self.process_paths()
 
@@ -431,7 +432,11 @@ class RealMarketDataset(StochasticModelDataset):
             paths = self.compute_log_returns()
         else:
             paths = self.paths
-        paths = np.lib.stride_tricks.sliding_window_view(paths, self.n_steps)
+
+        if self.sliding_window == 'non_overlapping':
+            paths = self.non_overlapping_swv(paths, self.n_steps)
+        else:
+            paths = np.lib.stride_tricks.sliding_window_view(paths, self.n_steps)
 
         self.n_paths = paths.shape[0]
         self.paths = np.expand_dims(paths, axis=1)
@@ -458,6 +463,15 @@ class RealMarketDataset(StochasticModelDataset):
         }
 
         return json.dumps(params, indent=2)
+
+    @staticmethod
+    def non_overlapping_swv(arr, window_size):
+        """
+        Compute non-overlapping sliding window view of an array.
+        """
+        max_length = arr.shape[0] - arr.shape[0] % window_size
+        return arr[:max_length].reshape(-1, window_size)
+
 
 
 def estimate_parameters(paths, dt):
