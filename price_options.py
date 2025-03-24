@@ -8,6 +8,7 @@ from matplotlib import pyplot as plt
 import seaborn as sns
 from scipy.stats import norm
 import pandas as pd
+from heston_closed_form_solution import heston_price
 
 plt.style.use('seaborn-v0_8')
 
@@ -93,14 +94,14 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
 
 
         if stochastic_model == 'GBM':
-            bs_price = price_option_bs(S0=100, K=K, r=mu, sigma=sigma, T=1.0)
+            theoretical_price = price_option_bs(S0=100, K=K, r=mu, sigma=sigma, T=1.0)
         else:
-            bs_price = None
+            theoretical_price = heston_price(S0=100, K=K, r=mu, T=1.0, v0=v0, kappa=kwargs.get('kappa'), theta=theta, sigma=kwargs.get('sigma_v'), rho=kwargs.get('rho'))
         results.append({
             "Strike Price": K,
             "Monte Carlo Price (Real)": round(estimated_price_real, 3),
             "Generated Price": round(estimated_prices_gen_avg, 3),
-            "BS Price": round(bs_price, 3) if bs_price is not None else None,
+            "Theoretical Price": round(theoretical_price, 3),
             "Relative Error (%)": round(100 * (estimated_price_gen - estimated_price_real) / estimated_price_real, 3),
             "Std Error (Real)": std_err_real,
             "Std Error (Generated)": estimated_prices_gen_std_err,
@@ -131,6 +132,9 @@ if __name__ == "__main__":
         sigma=dataset_args.get('sigma_gbm', None),
         theta=dataset_args.get('theta', None),
         v0=dataset_args.get('v0', None),
+        rho=dataset_args.get('rho', None),
+        sigma_v=dataset_args.get('sigma_v', None),
+        kappa=dataset_args.get('kappa', None),
         n_steps=dataset_args['n_steps'],
         return_log_returns=dataset_args['return_log_returns'],
         n_training_paths=dataset_args['n_paths'],
