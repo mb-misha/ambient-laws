@@ -7,6 +7,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 import seaborn as sns
 from scipy.stats import norm
+import pandas as pd
 
 plt.style.use('seaborn-v0_8')
 
@@ -77,11 +78,27 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
     mu_gen, sigma_gen = estimate_parameters(generated_gbm, dataset.dt)
 
     # Price options
-    estimated_price_real, std_err_real, _ = price_option(paths=real_gbm.T, K=K, r=mu, T=1.0, M=n_paths)
-    estimated_price_gen, std_err_gen, _ = price_option(paths=generated_gbm.T, K=K, r=mu, T=1.0, M=n_paths)
-    if stochastic_model == 'GBM':
-        bs_price = price_option_bs(S0=100, K=K, r=mu, sigma=sigma, T=1.0)
-
+    results = []
+    for K in range(70, 131, 10):
+        estimated_price_real, std_err_real, _ = price_option(paths=real_gbm.T, K=K, r=mu, T=1.0, M=n_paths)
+        estimated_price_gen, std_err_gen, _ = price_option(paths=generated_gbm.T, K=K, r=mu, T=1.0, M=n_paths)
+        if stochastic_model == 'GBM':
+            bs_price = price_option_bs(S0=100, K=K, r=mu, sigma=sigma, T=1.0)
+        else:
+            bs_price = None
+        results.append({
+            "Strike Price": K,
+            "Monte Carlo Price (Real)": round(estimated_price_real, 3),
+            "Generated Price": round(estimated_price_gen, 3),
+            "BS Price": round(bs_price, 3) if bs_price is not None else None,
+            "Relative Error (%)": round(100 * (estimated_price_gen - estimated_price_real) / estimated_price_real, 3),
+            "Std Error (Real)": std_err_real,
+            "Std Error (Generated)": std_err_gen,
+        })
+        
+    # Save results to CSV
+    df = pd.DataFrame(results)
+    df.to_csv(os.path.join(outdir, "option_pricing_results.csv"), index=False)
 
     # Create figure with subplots
     fig, axes = plt.subplots(4, 2, figsize=(12, 16))
