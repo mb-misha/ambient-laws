@@ -1,5 +1,6 @@
 import argparse
 import json
+import logging
 import os
 
 from matplotlib.backends.backend_pdf import PdfPages
@@ -478,6 +479,7 @@ def process_data(
     mu_real, sigma_real = estimate_parameters(real_gbm, dataset.dt)
     mu_gen, sigma_gen = estimate_parameters(generated_gbm, dataset.dt)
 
+    logging.info('Estimating option pricing results')
     # Compute option pricing results
     results_df = compute_option_pricing_results(
         real_paths,
@@ -502,12 +504,15 @@ def process_data(
     with PdfPages(output_filename) as pdf:
         fig, axes = plt.subplots(4, 2, figsize=(12, 16))
 
+        logging.info('Plotting path comparisons')
         # Path visualization subplots
         plot_path_comparisons(real_paths, generated_unnorm, real_gbm, generated_gbm, axes)
 
+        logging.info('Plotting parameter densities')
         # Density estimation plots
         plot_parameter_densities(mu_real, mu_gen, sigma_real, sigma_gen, axes)
 
+        logging.info('Plotting log returns density')
         # Log returns density plot
         plot_log_returns_density(real_paths, generated_unnorm, axes)
 
@@ -518,6 +523,7 @@ def process_data(
         pdf.savefig(fig)
         plt.close()
 
+        logging.info('Plotting Volatility analysis')
         # Additional Heston volatility plot if applicable
         if stochastic_model == 'Heston':
             heston_fig = plot_heston_volatility(dataset, real_paths, generated_unnorm)
