@@ -18,6 +18,7 @@ class StochasticModelDataset(Dataset):
         corruption_probability=0.0,
         sigma=0.0,
         noise_type='ve',
+        **kwargs
     ):
         """
         Base class for stochastic model path generators with shape (n_paths, n_steps, n_ts_features).
