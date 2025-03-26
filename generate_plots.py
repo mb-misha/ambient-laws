@@ -292,31 +292,7 @@ def plot_paths_and_distributions(
         output_dir (str, optional): Directory to save plots
     """
 
-    output_filename = os.path.join(output_dir, 'paths_analysis.pdf')
-    with PdfPages(output_filename) as pdf:
-        fig, axes = plt.subplots(4, 2, figsize=(12, 16))
 
-        # Path visualization subplots
-        plot_path_comparisons(real_paths, generated_paths, real_gbm_paths, generated_gbm_paths, axes)
-
-        # Density estimation plots
-        plot_parameter_densities(mu_real, mu_gen, sigma_real, sigma_gen, axes)
-
-        # Log returns density plot
-        plot_log_returns_density(real_paths, generated_paths, axes)
-
-        # Parameter info text
-        add_parameter_text(axes, dataset, n_training_paths, n_steps)
-
-        plt.tight_layout()
-        pdf.savefig(fig)
-        plt.close()
-
-        # Additional Heston volatility plot if applicable
-        if stochastic_model == 'Heston':
-            heston_fig = plot_heston_volatility(dataset, real_paths, generated_paths)
-            pdf.savefig(heston_fig)
-            plt.close()
 
 
 def plot_path_comparisons(real_paths, generated_paths, real_gbm_paths, generated_gbm_paths, axes):
@@ -521,22 +497,36 @@ def process_data(
     # Save results to CSV
     results_df.to_csv(os.path.join(outdir, "option_pricing_results.csv"), index=False)
 
-    # Create visualizations
-    plot_paths_and_distributions(
-        real_paths,
-        generated_unnorm,
-        real_gbm,
-        generated_gbm,
-        mu_real,
-        mu_gen,
-        sigma_real,
-        sigma_gen,
-        dataset,
-        n_training_paths,
-        n_steps,
-        stochastic_model,
-        outdir
-    )
+
+    output_filename = os.path.join(outdir, 'paths_analysis.pdf')
+    with PdfPages(output_filename) as pdf:
+        fig, axes = plt.subplots(4, 2, figsize=(12, 16))
+
+        # Path visualization subplots
+        plot_path_comparisons(real_paths, generated_unnorm, real_gbm, generated_gbm, axes)
+
+        # Density estimation plots
+        plot_parameter_densities(mu_real, mu_gen, sigma_real, sigma_gen, axes)
+
+        # Log returns density plot
+        plot_log_returns_density(real_paths, generated_unnorm, axes)
+
+        # Parameter info text
+        add_parameter_text(axes, dataset, n_training_paths, n_steps)
+
+        plt.tight_layout()
+        pdf.savefig(fig)
+        plt.close()
+
+        # Additional Heston volatility plot if applicable
+        if stochastic_model == 'Heston':
+            heston_fig = plot_heston_volatility(dataset, real_paths, generated_unnorm)
+            pdf.savefig(heston_fig)
+            plt.close()
+        fix, ax = plt.subplots()
+        ax.axis('off')
+        pd.plotting.table(ax, results_df, loc='center', colWidths=[0.1] * len(results_df.columns))
+        pdf.savefig(fix)
 
 
 
