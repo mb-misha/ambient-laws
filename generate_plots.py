@@ -200,7 +200,7 @@ def compute_option_pricing_results(
         )
 
         # Compute generated option prices
-        generated_paths_reshaped = generated_paths.reshape(-1, n_paths, dataset.n_steps)
+        generated_paths_reshaped = generated_paths.reshape(-1, n_paths, dataset.n_steps+1)
         estimated_prices_gen_batch = []
 
         for batch in generated_paths_reshaped:
