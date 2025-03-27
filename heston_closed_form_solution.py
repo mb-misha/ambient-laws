@@ -46,11 +46,13 @@ def cf_Heston_good(u, t, v0, mu, kappa, theta, sigma, rho):
     )
     return cf
 
-def heston_price(S0, K, r, T, v0, kappa, theta, sigma, rho):
+def heston_price(S0, K, r, T, v0, kappa, theta, sigma, rho, option_type='call'):
     k = np.log(K / S0)
     cf_H_b_good = partial(cf_Heston_good, t=T, v0=v0, mu=r, theta=theta, sigma=sigma, kappa=kappa, rho=rho)
 
 
     limit_max = 1000  # right limit in the integration
-    call = S0 * Q1(k, cf_H_b_good, limit_max) - K * np.exp(-r * T) * Q2(k, cf_H_b_good, limit_max)
-    return call
+    if option_type == 'call':
+        return S0 * Q1(k, cf_H_b_good, limit_max) - K * np.exp(-r * T) * Q2(k, cf_H_b_good, limit_max)
+    elif option_type == 'put':
+        return K * np.exp(-r * T) * (1 - Q2(k, cf_H_b_good, limit_max)) - S0 * (1 - Q1(k, cf_H_b_good, limit_max))
