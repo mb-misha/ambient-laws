@@ -2,7 +2,7 @@ import argparse
 import json
 import os
 
-from dataset_gbm import GBMGenerativeDataset, estimate_parameters, reverse_log_return, HestonGenerativeDataset
+from dataset_gbm import GBMGenerativeDataset, estimate_parameters, reverse_log_return, HestonGenerativeDataset, RealMarketDataset
 import numpy as np
 from matplotlib import pyplot as plt
 import seaborn as sns
@@ -84,7 +84,7 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
             sigma=noise_sigma,
             **kwargs
         )
-    else:
+    elif stochastic_model == 'Heston':
         dataset = HestonGenerativeDataset(
             mu=mu,
             n_steps=n_steps,
@@ -96,8 +96,23 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
             sigma=noise_sigma,
             **kwargs
         )
+    elif stochastic_model == 'MJD':
+        raise NotImplemented
+    elif stochastic_model == 'MarketData':
+        dataset = RealMarketDataset(
+            symbol=kwargs.get('symbol'),
+            n_steps=n_steps,
+            return_log_returns=return_log_returns,
+            normalize=normalization,
+            sigma=noise_sigma,
+        )
+    else:
+        raise ValueError(f"Invalid stochastic model: {stochastic_model}")
+
     real = dataset.paths.squeeze()
     generated = np.load(generated_filepath)
+    if stochastic_model == 'MarketData':
+        generated = generated[:real.shape[0], :]
     if normalization == 'global_mean':
         generated_unnorm = generated * np.mean(real)
     elif normalization == 'global_zscore':
@@ -317,46 +332,47 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
 
 
         # Price options
-        generated_gbm_reshaped = generated_gbm.reshape(-1, 100000, n_steps)
-        results = []
-        for i, pricer in enumerate([price_option_call, price_option_put]):
-            for K in range(70, 131, 10):
-                estimated_price_real, std_err_real, _ = pricer(paths=real_gbm.T, K=K, r=mu, T=1.0, M=n_paths)
+        if stochastic_model != 'MarketData':
+            generated_gbm_reshaped = generated_gbm.reshape(-1, 100000, n_steps)
+            results = []
+            for i, pricer in enumerate([price_option_call, price_option_put]):
+                for K in range(70, 131, 10):
+                    estimated_price_real, std_err_real, _ = pricer(paths=real_gbm.T, K=K, r=mu, T=1.0, M=n_paths)
 
-                estimated_prices_gen_batch = []
-                for batch in generated_gbm_reshaped:
-                    estimated_price_gen, _, _ = pricer(paths=batch.T, K=K, r=mu, T=1.0, M=n_paths)
-                    estimated_prices_gen_batch.append(estimated_price_gen)
-                estimated_prices_gen_avg = np.array(estimated_prices_gen_batch).mean()
-                estimated_prices_gen_std_err = np.array(estimated_prices_gen_batch).std() / np.sqrt(
-                    len(estimated_prices_gen_batch))
+                    estimated_prices_gen_batch = []
+                    for batch in generated_gbm_reshaped:
+                        estimated_price_gen, _, _ = pricer(paths=batch.T, K=K, r=mu, T=1.0, M=n_paths)
+                        estimated_prices_gen_batch.append(estimated_price_gen)
+                    estimated_prices_gen_avg = np.array(estimated_prices_gen_batch).mean()
+                    estimated_prices_gen_std_err = np.array(estimated_prices_gen_batch).std() / np.sqrt(
+                        len(estimated_prices_gen_batch))
 
-                if stochastic_model == 'GBM':
-                    theoretical_price = price_option_bs(S0=100, K=K, r=mu, sigma=sigma, T=1.0, option_type='call' if i == 0 else 'put')
-                else:
-                    theoretical_price = heston_price(S0=100, K=K, r=mu, T=1.0, v0=v0, kappa=kwargs.get('kappa'), theta=theta,
-                                                     sigma=kwargs.get('sigma_v'), rho=kwargs.get('rho'), option_type='call' if i == 0 else 'put')
-                results.append({
-                    "Option Type": "Call" if i == 0 else "Put",
-                    "Strike Price": K,
-                    "Monte Carlo Price (Real)": round(estimated_price_real, 3),
-                    "Generated Price": round(estimated_prices_gen_avg, 3),
-                    "Theoretical Price": round(theoretical_price, 3),
-                    "Relative Error (%)": round(100 * (estimated_price_gen - estimated_price_real) / estimated_price_real, 3),
-                    "Std Error (Real)": std_err_real,
-                    "Std Error (Generated)": estimated_prices_gen_std_err,
-                })
+                    if stochastic_model == 'GBM':
+                        theoretical_price = price_option_bs(S0=100, K=K, r=mu, sigma=sigma, T=1.0, option_type='call' if i == 0 else 'put')
+                    else:
+                        theoretical_price = heston_price(S0=100, K=K, r=mu, T=1.0, v0=v0, kappa=kwargs.get('kappa'), theta=theta,
+                                                         sigma=kwargs.get('sigma_v'), rho=kwargs.get('rho'), option_type='call' if i == 0 else 'put')
+                    results.append({
+                        "Option Type": "Call" if i == 0 else "Put",
+                        "Strike Price": K,
+                        "Monte Carlo Price (Real)": round(estimated_price_real, 3),
+                        "Generated Price": round(estimated_prices_gen_avg, 3),
+                        "Theoretical Price": round(theoretical_price, 3),
+                        "Relative Error (%)": round(100 * (estimated_price_gen - estimated_price_real) / estimated_price_real, 3),
+                        "Std Error (Real)": std_err_real,
+                        "Std Error (Generated)": estimated_prices_gen_std_err,
+                    })
 
-        fig, axes = plt.subplots(figsize=(10, 6))
-        fig.suptitle('Option Pricing Results')
-        df = pd.DataFrame(results).round(3)
-        table = pd.plotting.table(axes, df, loc='center', colWidths=[0.15]*len(df.columns))
-        table.auto_set_font_size(False)
-        table.set_fontsize(8)
-        axes.axis('off')
-        pdf.savefig(fig)
-        plt.close(fig)
-        df.to_csv(os.path.join(raw_data_outdir, 'option_pricing_results.csv'), index=False)
+            fig, axes = plt.subplots(figsize=(10, 6))
+            fig.suptitle('Option Pricing Results')
+            df = pd.DataFrame(results).round(3)
+            table = pd.plotting.table(axes, df, loc='center', colWidths=[0.15]*len(df.columns))
+            table.auto_set_font_size(False)
+            table.set_fontsize(8)
+            axes.axis('off')
+            pdf.savefig(fig)
+            plt.close(fig)
+            df.to_csv(os.path.join(raw_data_outdir, 'option_pricing_results.csv'), index=False)
 
         fig, axes = plt.subplots()
         fig.suptitle('Parameters')
@@ -446,7 +462,7 @@ if __name__ == "__main__":
         generated_filepath=args.generated_filepath,
         normalization=dataset_args['normalize'],
         stochastic_model=params['stochastic_model'],
-        mu=dataset_args['mu'],
+        mu=dataset_args.get('mu', None),
         sigma=dataset_args.get('sigma_gbm', None),
         theta=dataset_args.get('theta', None),
         v0=dataset_args.get('v0', None),
@@ -459,6 +475,7 @@ if __name__ == "__main__":
         noise_sigma=dataset_args.get('sigma', 0.0),
         corruption_probability=dataset_args.get('corruption_probability', 0.0),
         noise_type=dataset_args.get('noise_type', None),
+        symbol=dataset_args.get('symbol', None),
     )
 
 
