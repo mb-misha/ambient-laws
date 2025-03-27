@@ -390,14 +390,14 @@ def plot_distribution(axes, generated_unnorm, real):
 
 def plot_sample_statistics(axes, generated_unnorm, real):
     # Calculate log return statistics
-    real_mean = np.mean(real, axis=0)
-    real_std = np.std(real, axis=0)
-    real_skew = skew(real, axis=0)
-    real_kurtosis = kurtosis(real, axis=0)
-    generated_mean = np.mean(generated_unnorm, axis=0)
-    generated_std = np.std(generated_unnorm, axis=0)
-    generated_skew = skew(generated_unnorm, axis=0)
-    generated_kurtosis = kurtosis(generated_unnorm, axis=0)
+    real_mean = np.mean(real, axis=1)
+    real_std = np.std(real, axis=1)
+    real_skew = skew(real, axis=1)
+    real_kurtosis = kurtosis(real, axis=1)
+    generated_mean = np.mean(generated_unnorm, axis=1)
+    generated_std = np.std(generated_unnorm, axis=1)
+    generated_skew = skew(generated_unnorm, axis=1)
+    generated_kurtosis = kurtosis(generated_unnorm, axis=1)
     # Plot KDE of statistics
     sns.kdeplot(real_mean, label='real', fill=True, ax=axes[0, 0])
     sns.kdeplot(generated_mean, label='generated', fill=True, ax=axes[0, 0])
