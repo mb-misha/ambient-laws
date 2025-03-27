@@ -114,6 +114,8 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
         real_gbm = real
         generated_gbm = generated_unnorm
 
+    real_norm = (real - dataset.mean)/dataset.std
+
 
     raw_data_outdir = os.path.join(outdir, 'raw_data')
     os.makedirs(raw_data_outdir, exist_ok=True)
@@ -121,6 +123,7 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
     with PdfPages(output_filename) as pdf:
         # Create figure with subplots
         fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+        fig.suptitle(f"Real vs. Generated Paths ({stochastic_model})")
         # Plot 1: Real Paths
         for path in real[:100]:
             axes[0, 0].plot(path, alpha=0.5)
@@ -144,115 +147,49 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
         plt.savefig(os.path.join(raw_data_outdir, 'gen_paths.png'))
         plt.close(fig)
 
+        # Analyze normalized data
         fig, axes = plt.subplots(1, 2)
+        fig.suptitle('Distribution of Normalized Data')
+        plot_distribution(axes, generated, real_norm)
+        pdf.savefig(fig)
+        plt.savefig(os.path.join(raw_data_outdir, 'kde_log_returns_norm.png'))
+        plt.close(fig)
 
-        ks_statistic, p_value = scipy.stats.ks_2samp(real.flatten(), generated_unnorm.flatten())
-        kl = scipy.special.kl_div(real.flatten(), generated_unnorm.flatten()).sum()
-        wd = scipy.stats.wasserstein_distance(real.flatten(), generated_unnorm.flatten())
+        fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+        fig.suptitle('Sample Statistics of Normalized Data')
+        stats_df = plot_sample_statistics(axes, generated, real_norm)
 
-        # Plot KDE of Log Returns
-        sns.kdeplot(real.flatten(), label='real', fill=True, ax=axes[0])
-        sns.kdeplot(generated_unnorm.flatten(), label='generated', fill=True, ax=axes[0])
-        axes[0].legend()
-        axes[0].set_title("KDE of Log Returns")
+        pdf.savefig(fig)
+        plt.savefig(os.path.join(raw_data_outdir, 'log_return_stats_norm.png'))
+        plt.close(fig)
+        stats_df.to_csv(os.path.join(raw_data_outdir, 'log_return_stats_norm.csv'))
 
-        test_results = f'K-S Statistic: {ks_statistic:.5f}\nP-value: {p_value:.5f}'
-        test_results += f'\nKL Divergence: {kl:.5f}'
-        test_results += f'\nWasserstein Distance: {wd:.5f}'
-        axes[1].text(0.5, 0.5, test_results,
-             horizontalalignment='center',
-             verticalalignment='center',
-             fontsize=12,
-             bbox=dict(facecolor='white', alpha=0.5))
-        axes[1].set_title('Kolmogorov-Smirnov Test Results')
-        axes[1].axis('off')
+        fig, axes = plt.subplots()
+        fig.suptitle('Sample Statistics of Normalized Data')
+        pd.plotting.table(axes, stats_df, loc='center')
+        axes.axis('off')
+        pdf.savefig(fig)
+        plt.close(fig)
 
-        plt.tight_layout()
 
+        # Analyze denormalized data
+        fig, axes = plt.subplots(1, 2)
+        fig.suptitle('Distribution of Denormalized Data')
+        plot_distribution(axes, generated_unnorm, real)
         pdf.savefig(fig)
         plt.savefig(os.path.join(raw_data_outdir, 'kde_log_returns.png'))
         plt.close(fig)
 
-        fig, axes = plt.subplots(1, 2, figsize=(12, 6))
-        # VAR and CVAR
-        real_var, real_cvar = compute_var_cvar(real)
-        generated_var, generated_cvar = compute_var_cvar(generated_unnorm)
-
-        real_var_mean = np.mean(real_var)
-        real_cvar_mean = np.mean(real_cvar)
-        generated_var_mean = np.mean(generated_var)
-        generated_cvar_mean = np.mean(generated_cvar)
-
-        sns.kdeplot(real_var, label='real', fill=True, ax=axes[0])
-        sns.kdeplot(generated_var, label='generated', fill=True, ax=axes[0])
-        axes[0].axvline(real_var_mean, color='blue', linestyle='--', label=f'real var mean ({real_var_mean:.3f})')
-        axes[0].axvline(generated_var_mean, color='orange', linestyle='--', label=f'generated var mean ({generated_var_mean:.3f})')
-        axes[0].legend()
-        axes[0].set_title("KDE of VAR")
-
-        sns.kdeplot(real_cvar, label='real', fill=True, ax=axes[1])
-        sns.kdeplot(generated_cvar, label='generated', fill=True, ax=axes[1])
-        axes[1].axvline(real_cvar_mean, color='blue', linestyle='--', label=f'real cvar mean ({real_cvar_mean:.3f})')
-        axes[1].axvline(generated_cvar_mean, color='orange', linestyle='--', label=f'generated cvar mean ({generated_cvar_mean:.3f})')
-        axes[1].legend()
-        axes[1].set_title("KDE of CVAR")
-        pdf.savefig(fig)
-        plt.savefig(os.path.join(raw_data_outdir, 'var_cvar.png'))
-        plt.close(fig)
-
-
-        # Calculate log return statistics
-        real_mean = np.mean(real, axis=0)
-        real_std = np.std(real, axis=0)
-        real_skew = skew(real, axis=0)
-        real_kurtosis = kurtosis(real, axis=0)
-        generated_mean = np.mean(generated_unnorm, axis=0)
-        generated_std = np.std(generated_unnorm, axis=0)
-        generated_skew = skew(generated_unnorm, axis=0)
-        generated_kurtosis = kurtosis(generated_unnorm, axis=0)
-
         fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-        # Plot KDE of statistics
-        sns.kdeplot(real_mean, label='real', fill=True, ax=axes[0, 0])
-        sns.kdeplot(generated_mean, label='generated', fill=True, ax=axes[0, 0])
-        axes[0, 0].legend()
-        axes[0, 0].set_title("KDE of Mean Log Returns")
-
-        sns.kdeplot(real_std, label='real', fill=True, ax=axes[0, 1])
-        sns.kdeplot(generated_std, label='generated', fill=True, ax=axes[0, 1])
-        axes[0, 1].legend()
-        axes[0, 1].set_title("KDE of Std Dev Log Returns")
-
-        sns.kdeplot(real_skew, label='real', fill=True, ax=axes[1, 0])
-        sns.kdeplot(generated_skew, label='generated', fill=True, ax=axes[1, 0])
-        axes[1, 0].legend()
-        axes[1, 0].set_title("KDE of Skewness Log Returns")
-
-        sns.kdeplot(real_kurtosis, label='real', fill=True, ax=axes[1, 1])
-        sns.kdeplot(generated_kurtosis, label='generated', fill=True, ax=axes[1, 1])
-        axes[1, 1].legend()
-        axes[1, 1].set_title("KDE of Kurtosis Log Returns")
+        fig.suptitle('Sample Statistics of Denormalized Data')
+        stats_df = plot_sample_statistics(axes, generated_unnorm, real)
         pdf.savefig(fig)
         plt.savefig(os.path.join(raw_data_outdir, 'log_return_stats.png'))
         plt.close(fig)
-
-        real_stats = {
-            "Mean": real_mean.mean(),
-            "Std": real_std.mean(),
-            "Skew": real_skew.mean(),
-            "Kurtosis": real_kurtosis.mean()
-        }
-        generated_stats = {
-            "Mean": generated_mean.mean(),
-            "Std": generated_std.mean(),
-            "Skew": generated_skew.mean(),
-            "Kurtosis": generated_kurtosis.mean()
-        }
-        stats_df = pd.DataFrame([real_stats, generated_stats], index=['Real', 'Generated']).round(5)
-
         stats_df.to_csv(os.path.join(raw_data_outdir, 'log_return_stats.csv'))
 
         fig, axes = plt.subplots()
+        fig.suptitle('Sample Statistics of Denormalized Data')
         pd.plotting.table(axes, stats_df, loc='center')
         axes.axis('off')
         pdf.savefig(fig)
@@ -260,6 +197,7 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
 
 
         fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+        fig.suptitle('Autocorrelation of Log Returns')
         plot_acf(real[0], lags=50, ax=axes[0, 0])
         axes[0, 0].set_title("ACF of Real Log Returns")
         plot_acf(generated_unnorm[0], lags=50, ax=axes[0, 1])
@@ -302,6 +240,7 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
 
         # Plot GBM parameters
         fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+        fig.suptitle('GBM Parameters Estimation')
 
         # Estimate parameters
         mu_real, sigma_real = estimate_parameters(real_gbm, dataset.dt)
@@ -332,19 +271,49 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
 
 
         if stochastic_model == 'Heston':
+            fig, ax = plt.subplots()
+            fig.suptitle('Heston Volatility Analysis')
             realized_volatility = np.sqrt(np.mean(real**2, axis=0)*n_steps)
             realized_volatility_generated = np.sqrt(np.mean(generated_unnorm**2, axis=0)*n_steps)
-            plt.figure()
-            plt.plot(np.mean(dataset.variances, axis=0), label='True Variance (Heston)')
-            plt.plot(realized_volatility**2, label='Realized Volatility (Heston)')
-            plt.plot(realized_volatility_generated**2, label='Realized Volatility (Generated)')
-            plt.legend()
-            plt.title('True vs. estimated volatility (Heston) vs estimated volatility (generated)')
-            plt.xlabel('Time Steps')
-            plt.ylabel('Volatility')
+            ax.plot(np.mean(dataset.variances, axis=0), label='True Variance (Heston)')
+            ax.plot(realized_volatility**2, label='Realized Volatility (Heston)')
+            ax.plot(realized_volatility_generated**2, label='Realized Volatility (Generated)')
+            ax.legend()
+            ax.set_title('True vs. estimated volatility (Heston) vs estimated volatility (generated)')
+            ax.set_xlabel('Time Steps')
+            ax.set_ylabel('Volatility')
             plt.savefig(os.path.join(raw_data_outdir, 'volatility_analysis.png'))
-            pdf.savefig(plt.gcf())
-            plt.close()
+            pdf.savefig(fig)
+            plt.close(fig)
+
+
+        fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+        fig.suptitle('VAR and CVAR Analysis')
+        # VAR and CVAR
+        real_var, real_cvar = compute_var_cvar(real)
+        generated_var, generated_cvar = compute_var_cvar(generated_unnorm)
+
+        real_var_mean = np.mean(real_var)
+        real_cvar_mean = np.mean(real_cvar)
+        generated_var_mean = np.mean(generated_var)
+        generated_cvar_mean = np.mean(generated_cvar)
+
+        sns.kdeplot(real_var, label='real', fill=True, ax=axes[0])
+        sns.kdeplot(generated_var, label='generated', fill=True, ax=axes[0])
+        axes[0].axvline(real_var_mean, color='blue', linestyle='--', label=f'real var mean ({real_var_mean:.3f})')
+        axes[0].axvline(generated_var_mean, color='orange', linestyle='--', label=f'generated var mean ({generated_var_mean:.3f})')
+        axes[0].legend()
+        axes[0].set_title("KDE of VAR")
+
+        sns.kdeplot(real_cvar, label='real', fill=True, ax=axes[1])
+        sns.kdeplot(generated_cvar, label='generated', fill=True, ax=axes[1])
+        axes[1].axvline(real_cvar_mean, color='blue', linestyle='--', label=f'real cvar mean ({real_cvar_mean:.3f})')
+        axes[1].axvline(generated_cvar_mean, color='orange', linestyle='--', label=f'generated cvar mean ({generated_cvar_mean:.3f})')
+        axes[1].legend()
+        axes[1].set_title("KDE of CVAR")
+        pdf.savefig(fig)
+        plt.savefig(os.path.join(raw_data_outdir, 'var_cvar.png'))
+        plt.close(fig)
 
 
         # Price options
@@ -379,6 +348,7 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
                 })
 
         fig, axes = plt.subplots(figsize=(10, 6))
+        fig.suptitle('Option Pricing Results')
         df = pd.DataFrame(results).round(3)
         table = pd.plotting.table(axes, df, loc='center', colWidths=[0.15]*len(df.columns))
         table.auto_set_font_size(False)
@@ -389,11 +359,76 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
         df.to_csv(os.path.join(raw_data_outdir, 'option_pricing_results.csv'), index=False)
 
         fig, axes = plt.subplots()
+        fig.suptitle('Parameters')
         params_str = str(dataset) + "\n" + f"K={K}\n" + f"Training set size: ({n_training_paths}, {n_steps-1})\n\n"
         axes.text(0.5, 0.5, params_str, fontsize=12, ha='center', va='center', bbox={"facecolor": "white", "alpha": 0.5, "pad": 5})
         axes.axis('off')
         pdf.savefig(fig)
         plt.close(fig)
+
+
+def plot_distribution(axes, generated_unnorm, real):
+    ks_statistic, p_value = scipy.stats.ks_2samp(real.flatten(), generated_unnorm.flatten())
+    kl = scipy.special.kl_div(real.flatten(), generated_unnorm.flatten()).sum()
+    wd = scipy.stats.wasserstein_distance(real.flatten(), generated_unnorm.flatten())
+    # Plot KDE of Log Returns
+    sns.kdeplot(real.flatten(), label='real', fill=True, ax=axes[0])
+    sns.kdeplot(generated_unnorm.flatten(), label='generated', fill=True, ax=axes[0])
+    axes[0].legend()
+    axes[0].set_title("KDE of Log Returns")
+    test_results = f'K-S Statistic: {ks_statistic:.5f}\nP-value: {p_value:.5f}'
+    test_results += f'\nKL Divergence: {kl:.5f}'
+    test_results += f'\nWasserstein Distance: {wd:.5f}'
+    axes[1].text(0.5, 0.5, test_results,
+                 horizontalalignment='center',
+                 verticalalignment='center',
+                 fontsize=12,
+                 bbox=dict(facecolor='white', alpha=0.5))
+    axes[1].set_title('Kolmogorov-Smirnov Test Results')
+    axes[1].axis('off')
+
+
+def plot_sample_statistics(axes, generated_unnorm, real):
+    # Calculate log return statistics
+    real_mean = np.mean(real, axis=0)
+    real_std = np.std(real, axis=0)
+    real_skew = skew(real, axis=0)
+    real_kurtosis = kurtosis(real, axis=0)
+    generated_mean = np.mean(generated_unnorm, axis=0)
+    generated_std = np.std(generated_unnorm, axis=0)
+    generated_skew = skew(generated_unnorm, axis=0)
+    generated_kurtosis = kurtosis(generated_unnorm, axis=0)
+    # Plot KDE of statistics
+    sns.kdeplot(real_mean, label='real', fill=True, ax=axes[0, 0])
+    sns.kdeplot(generated_mean, label='generated', fill=True, ax=axes[0, 0])
+    axes[0, 0].legend()
+    axes[0, 0].set_title("KDE of Mean Log Returns")
+    sns.kdeplot(real_std, label='real', fill=True, ax=axes[0, 1])
+    sns.kdeplot(generated_std, label='generated', fill=True, ax=axes[0, 1])
+    axes[0, 1].legend()
+    axes[0, 1].set_title("KDE of Std Dev Log Returns")
+    sns.kdeplot(real_skew, label='real', fill=True, ax=axes[1, 0])
+    sns.kdeplot(generated_skew, label='generated', fill=True, ax=axes[1, 0])
+    axes[1, 0].legend()
+    axes[1, 0].set_title("KDE of Skewness Log Returns")
+    sns.kdeplot(real_kurtosis, label='real', fill=True, ax=axes[1, 1])
+    sns.kdeplot(generated_kurtosis, label='generated', fill=True, ax=axes[1, 1])
+    axes[1, 1].legend()
+    axes[1, 1].set_title("KDE of Kurtosis Log Returns")
+    real_stats = {
+        "Mean": real_mean.mean(),
+        "Std": real_std.mean(),
+        "Skew": real_skew.mean(),
+        "Kurtosis": real_kurtosis.mean()
+    }
+    generated_stats = {
+        "Mean": generated_mean.mean(),
+        "Std": generated_std.mean(),
+        "Skew": generated_skew.mean(),
+        "Kurtosis": generated_kurtosis.mean()
+    }
+    stats_df = pd.DataFrame([real_stats, generated_stats], index=['Real', 'Generated']).round(5)
+    return stats_df
 
 
 if __name__ == "__main__":
