@@ -2,7 +2,7 @@ import argparse
 import json
 import os
 
-from dataset_gbm import GBMGenerativeDataset, estimate_parameters, reverse_log_return, HestonGenerativeDataset, RealMarketDataset
+from dataset_gbm import GBMGenerativeDataset, estimate_parameters, reverse_log_return, HestonGenerativeDataset, RealMarketDataset, MJDGenerativeDataset
 import numpy as np
 from matplotlib import pyplot as plt
 import seaborn as sns
@@ -97,7 +97,18 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
             **kwargs
         )
     elif stochastic_model == 'MJD':
-        raise NotImplemented
+        dataset = MJDGenerativeDataset(
+            mu=mu,
+            n_steps=n_steps,
+            n_paths=n_paths,
+            sigma_gbm=sigma,
+            lamb=kwargs.get('lamb'),
+            mu_j=kwargs.get('mu_j'),
+            sigma_j=kwargs.get('sigma_j'),
+            return_log_returns=return_log_returns,
+            normalize=normalization,
+            sigma=noise_sigma,
+        )
     elif stochastic_model == 'MarketData':
         dataset = RealMarketDataset(
             symbol=kwargs.get('symbol'),
@@ -476,6 +487,9 @@ if __name__ == "__main__":
         corruption_probability=dataset_args.get('corruption_probability', 0.0),
         noise_type=dataset_args.get('noise_type', None),
         symbol=dataset_args.get('symbol', None),
+        mu_j=dataset_args.get('mu_j', None),
+        sigma_j=dataset_args.get('sigma_j', None),
+        lamb=dataset_args.get('lamb', None),
     )
 
 
