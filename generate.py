@@ -329,28 +329,6 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
     with open(os.path.join(outdir, 'generated_paths.npy'), 'wb') as f:
         np.save(f, all_generated_paths)
 
-    # Plot a subset of time series on the same plot
-    num_samples_to_plot = 100  # Choose a small subset (e.g., 5 samples)
-    subset_indices = np.random.choice(all_generated_paths.shape[0], num_samples_to_plot, replace=False)
-    subset_ts = all_generated_paths[subset_indices]  # Select these time series
-
-    plt.figure(figsize=(10, 5))
-
-    # Plot selected time series
-    for i, ts in enumerate(subset_ts):
-        plt.plot(ts)
-
-    plt.xlabel('Time Step', fontsize=12)
-    plt.ylabel('Value', fontsize=12)
-    plt.title('Subset of Generated Time Series', fontsize=14)
-    plt.legend(loc='upper left', bbox_to_anchor=(1, 1), fontsize=10, frameon=True)  # Move legend outside
-    # Save the plot
-    plot_path = os.path.join(outdir, 'subset_plot.png')
-    plt.savefig(plot_path, bbox_inches='tight')
-    plt.close()
-    print(f"Saved subset plot to {plot_path}")
-
-
 
     # Done.
     torch.distributed.barrier()
