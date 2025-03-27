@@ -360,9 +360,11 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
 
                     if stochastic_model == 'GBM':
                         theoretical_price = price_option_bs(S0=100, K=K, r=mu, sigma=sigma, T=1.0, option_type='call' if i == 0 else 'put')
-                    else:
+                    elif stochastic_model == 'Heston':
                         theoretical_price = heston_price(S0=100, K=K, r=mu, T=1.0, v0=v0, kappa=kwargs.get('kappa'), theta=theta,
                                                          sigma=kwargs.get('sigma_v'), rho=kwargs.get('rho'), option_type='call' if i == 0 else 'put')
+                    elif stochastic_model == 'MJD':
+                        theoretical_price = 0.0
                     results.append({
                         "Option Type": "Call" if i == 0 else "Put",
                         "Strike Price": K,
