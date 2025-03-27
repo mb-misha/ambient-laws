@@ -456,9 +456,9 @@ if __name__ == "__main__":
         n_steps=dataset_args['n_steps'],
         return_log_returns=dataset_args['return_log_returns'],
         n_training_paths=dataset_args['n_paths'],
-        noise_sigma=dataset_args['sigma'],
-        corruption_probability=dataset_args['corruption_probability'],
-        noise_type=dataset_args['noise_type'],
+        noise_sigma=dataset_args.get('sigma', 0.0),
+        corruption_probability=dataset_args.get('corruption_probability', 0.0),
+        noise_type=dataset_args.get('noise_type', None),
     )
 
 
