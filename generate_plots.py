@@ -14,6 +14,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from scipy.stats import skew, kurtosis
 from statsmodels.graphics.tsaplots import plot_acf
 import statsmodels.api as sm
+from MJD_closed_form_solution import merton_jump_diffusion_price
 
 plt.style.use('seaborn-v0_8')
 plt.rcParams['figure.autolayout'] = True
@@ -364,7 +365,11 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
                         theoretical_price = heston_price(S0=100, K=K, r=mu, T=1.0, v0=v0, kappa=kwargs.get('kappa'), theta=theta,
                                                          sigma=kwargs.get('sigma_v'), rho=kwargs.get('rho'), option_type='call' if i == 0 else 'put')
                     elif stochastic_model == 'MJD':
-                        theoretical_price = 0.0
+                        theoretical_price = merton_jump_diffusion_price(
+                            S0=100, K=K, r=mu, T=1.0, lamb=kwargs.get('lamb'),
+                            mu_j=kwargs.get('mu_j'), sigma_j=kwargs.get('sigma_j'), sigma=sigma,
+                            option_type='call' if i == 0 else 'put'
+                        )
                     results.append({
                         "Option Type": "Call" if i == 0 else "Put",
                         "Strike Price": K,
