@@ -15,7 +15,9 @@ from scipy.stats import skew, kurtosis
 from statsmodels.graphics.tsaplots import plot_acf
 import statsmodels.api as sm
 from MJD_closed_form_solution import merton_jump_diffusion_price
+import logging
 
+logging.basicConfig(level=logging.INFO)
 plt.style.use('seaborn-v0_8')
 plt.rcParams['figure.autolayout'] = True
 
@@ -74,6 +76,7 @@ def compute_var_cvar(returns, alpha=0.95):
 def process_data(generated_filepath, normalization, stochastic_model, mu, sigma, theta, v0, n_steps, return_log_returns, n_training_paths, noise_sigma, n_paths=100000, K=110, **kwargs):
     outdir = os.path.dirname(generated_filepath)
     # Generate dataset
+    logging.info(f"Generating MC datasets")
     if stochastic_model == 'GBM':
         dataset = GBMGenerativeDataset(
             n_paths=n_paths,
@@ -148,6 +151,7 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
     os.makedirs(raw_data_outdir, exist_ok=True)
     output_filename = os.path.join(outdir, 'paths_analysis.pdf')
     with PdfPages(output_filename) as pdf:
+        logging.info("Plotting paths")
         # Create figure with subplots
         fig, axes = plt.subplots(2, 2, figsize=(12, 8))
         fig.suptitle(f"Real vs. Generated Paths ({stochastic_model})")
@@ -174,6 +178,7 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
         plt.savefig(os.path.join(raw_data_outdir, 'gen_paths.png'))
         plt.close(fig)
 
+        logging.info("Plotting statistics for normalized data")
         # Analyze normalized data
         fig, axes = plt.subplots(1, 2)
         fig.suptitle('Distribution of Normalized Data')
@@ -199,6 +204,7 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
         plt.close(fig)
 
 
+        logging.info("Plotting statistics for denormalized data")
         # Analyze denormalized data
         fig, axes = plt.subplots(1, 2)
         fig.suptitle('Distribution of Denormalized Data')
@@ -222,7 +228,7 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
         pdf.savefig(fig)
         plt.close(fig)
 
-
+        logging.info("Plotting autocorrelation")
         fig, axes = plt.subplots(2, 2, figsize=(12, 8))
         fig.suptitle('Autocorrelation of Log Returns')
         plot_acf(real[0], lags=50, ax=axes[0, 0])
@@ -264,7 +270,38 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
         # plt.savefig(os.path.join(raw_data_outdir, 'autocorrelation.png'))
         # plt.close(fig)
 
+        if stochastic_model == 'MJD':
+            logging.info('MLE estimation of MJD parameters')
+            real_params = minimize(
+                log_likely_Merton,
+                x0=[0.1, 0.5, 1, 0.1, 1],
+                method='BFGS',
+                args=(real[:, -1], 1.0)
+            )
+            generated_params = minimize(
+                log_likely_Merton,
+                x0=[0.1, 0.5, 1, 0.1, 1],
+                method='BFGS',
+                args=(generated_unnorm[:, -1], 1.0)
+            )
+            real_params = real_params.x
+            generated_params = generated_params.x
+            mle_df = pd.DataFrame({
+                "Parameter": ['mu', 'sigma', 'lambda', 'mu_j', 'sigma_j'],
+                "Ground truth": [mu, sigma, kwargs.get('lamb'), kwargs.get('mu_j'), kwargs.get('sigma_j')],
+                "Real Estimated": real_params,
+                "Generated Estimated": generated_params
+            })
+            mle_df.to_csv(os.path.join(raw_data_outdir, 'mle_estimation.csv'))
+            fig, axes = plt.subplots()
+            fig.suptitle('MLE Estimation of MJD Parameters')
+            pd.plotting.table(axes, mle_df, loc='center')
+            axes.axis('off')
+            pdf.savefig(fig)
+            plt.close(fig)
 
+
+        logging.info("Estimating drift and volatility")
         # Plot GBM parameters
         fig, axes = plt.subplots(1, 2, figsize=(12, 6))
         fig.suptitle('GBM Parameters Estimation')
@@ -296,7 +333,7 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
         plt.savefig(os.path.join(raw_data_outdir, 'gbm_parameters.png'))
         plt.close(fig)
 
-
+        logging.info('Plotting volatility')
         fig, ax = plt.subplots()
         fig.suptitle('Volatility Analysis')
         realized_volatility = np.sqrt(np.mean(real**2, axis=0)*n_steps)
@@ -313,7 +350,7 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
         pdf.savefig(fig)
         plt.close(fig)
 
-
+        logging.info('Plotting VAR/CVAR')
         fig, axes = plt.subplots(1, 2, figsize=(12, 6))
         fig.suptitle('VAR and CVAR Analysis')
         # VAR and CVAR
@@ -342,7 +379,7 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
         plt.savefig(os.path.join(raw_data_outdir, 'var_cvar.png'))
         plt.close(fig)
 
-
+        logging.info('Pricing options')
         # Price options
         if stochastic_model != 'MarketData':
             generated_gbm_reshaped = generated_gbm.reshape(-1, 100000, n_steps)
