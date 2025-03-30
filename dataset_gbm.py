@@ -355,25 +355,18 @@ class MJDGenerativeDataset(StochasticModelDataset):
         """
         Simulates the Merton Jump Diffusion model.
         """
-        # Precompute constants
-        k = np.exp(mu_j + 0.5 * sigma_j**2) - 1
-        drift = (mu - lamb * k - 0.5 * sigma**2) * dt
+        size = (n_steps, n_paths)
+        poi_rv = np.multiply(np.random.poisson(lamb * dt, size=size),
+                             np.random.normal(mu_j, sigma_j, size=size)).cumsum(axis=0)
+        geo = np.cumsum(((mu - sigma ** 2 / 2 - lamb * (mu_j + sigma_j ** 2 * 0.5)) * dt + \
+                         sigma * np.sqrt(dt) * \
+                         np.random.normal(size=size)), axis=0)
 
-        # Initialize asset prices array
-        St = np.zeros((n_steps + 1, n_paths))
-        St[0] = S0
+        res = np.exp(geo + poi_rv)
+        res = np.vstack([np.ones((1, n_paths)), res])
+        return res.T * S0
 
-        for i in range(1, n_steps + 1):
-            # Simulate Poisson jumps
-            N_t = np.random.poisson(lamb * dt, n_paths)
-            # Simulate jump sizes
-            J_t = np.random.normal(mu_j, sigma_j, (n_paths,)) * N_t
-            # Simulate diffusion component
-            diffusion = drift + sigma * np.sqrt(dt) * np.random.normal(0, 1, n_paths)
-            # Update asset prices
-            St[i] = St[i - 1] * np.exp(diffusion + J_t)
 
-        return St.T
 
     def __str__(self):
         """
