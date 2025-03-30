@@ -14,8 +14,9 @@ from matplotlib.backends.backend_pdf import PdfPages
 from scipy.stats import skew, kurtosis
 from statsmodels.graphics.tsaplots import plot_acf
 import statsmodels.api as sm
-from MJD_closed_form_solution import merton_jump_diffusion_price
+from MJD_utils import merton_jump_diffusion_price, log_likelihood_merton_adj
 import logging
+from scipy.optimize import minimize
 
 logging.basicConfig(level=logging.INFO)
 plt.style.use('seaborn-v0_8')
@@ -123,6 +124,9 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
         )
     else:
         raise ValueError(f"Invalid stochastic model: {stochastic_model}")
+
+    T = dataset.T
+    S0 = dataset.s_price
 
     real = dataset.paths.squeeze()
     generated = np.load(generated_filepath)
@@ -272,17 +276,19 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
 
         if stochastic_model == 'MJD':
             logging.info('MLE estimation of MJD parameters')
+            X_T_real = np.log(real_gbm[:, -1]/S0)
             real_params = minimize(
-                log_likely_Merton,
+                log_likelihood_merton_adj,
                 x0=[0.1, 0.5, 1, 0.1, 1],
-                method='BFGS',
-                args=(real[:, -1], 1.0)
+                method='Nelder-Mead',
+                args=(X_T_real, T)
             )
+            X_T_generated = np.log(generated_gbm[:, -1]/S0)
             generated_params = minimize(
-                log_likely_Merton,
-                x0=[0.1, 0.5, 1, 0.1, 1],
-                method='BFGS',
-                args=(generated_unnorm[:, -1], 1.0)
+                log_likelihood_merton_adj,
+                x0=[0.1, 0.3, 1, 0.1, 1],
+                method='Nelder-Mead',
+                args=(X_T_generated, T)
             )
             real_params = real_params.x
             generated_params = generated_params.x
@@ -291,7 +297,7 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
                 "Ground truth": [mu, sigma, kwargs.get('lamb'), kwargs.get('mu_j'), kwargs.get('sigma_j')],
                 "Real Estimated": real_params,
                 "Generated Estimated": generated_params
-            })
+            }).round(5)
             mle_df.to_csv(os.path.join(raw_data_outdir, 'mle_estimation.csv'))
             fig, axes = plt.subplots()
             fig.suptitle('MLE Estimation of MJD Parameters')
