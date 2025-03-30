@@ -88,3 +88,39 @@ def black_scholes_price(
         return K * np.exp(-r * T) * norm.cdf(-d2) - S0 * norm.cdf(-d1)
     else:
         raise ValueError("Option type must be 'call' or 'put'")
+
+
+def Merton_density(x, T, mu, sig, lam, muJ, sigJ):
+    tot = 0
+    for k in range(20):
+        tot += (
+            (lam * T) ** k
+            * np.exp(-((x - mu * T - k * muJ) ** 2) / (2 * (T * sig**2 + k * sigJ**2)))
+            / (factorial(k) * np.sqrt(2 * np.pi * (sig**2 * T + k * sigJ**2)))
+        )
+    return np.exp(-lam * T) * tot
+
+def log_likely_Merton(x, data, T):
+    return (-1) * np.sum(np.log(Merton_density(data, T, x[0], x[1], x[2], x[3], x[4])))
+
+
+def Merton_density_adjusted(x, T, mu, sigma, lamb, muJ, sigmaJ, K=20):
+    drift_adj = mu - lamb * (muJ + 0.5 * sigmaJ ** 2)
+    total = 0
+    for k in range(K):
+        variance = sigma ** 2 * T + k * sigmaJ ** 2
+        mean = drift_adj * T + k * muJ
+        weight = (lamb * T) ** k * np.exp(-((x - mean) ** 2) / (2 * variance))
+        weight /= (factorial(k) * np.sqrt(2 * np.pi * variance))
+        total += weight
+    return np.exp(-lamb * T) * total
+
+# --- Log-likelihood function ---
+def log_likelihood_merton_adj(params, data, T):
+    mu, sigma, lamb, muJ, sigmaJ = params
+    # Avoid invalid regions
+    if sigma <= 0 or sigmaJ <= 0 or lamb <= 0:
+        return np.inf
+    pdf_vals = Merton_density_adjusted(data, T, mu, sigma, lamb, muJ, sigmaJ)
+    # Avoid log(0) by clipping pdf values
+    return -np.sum(np.log(np.clip(pdf_vals, 1e-12, None)))
