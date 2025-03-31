@@ -127,7 +127,10 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
         raise ValueError(f"Invalid stochastic model: {stochastic_model}")
 
     T = dataset.T
-    S0 = dataset.s_price
+    try:
+        S0 = dataset.s_price
+    except AttributeError:
+        S0 = 100
 
     real = dataset.paths.squeeze(1)
     generated = np.load(generated_filepath)
