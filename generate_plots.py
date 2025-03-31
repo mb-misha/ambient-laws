@@ -121,6 +121,7 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
             return_log_returns=return_log_returns,
             normalize=normalization,
             sigma=noise_sigma,
+            sliding_window=kwargs.get('sliding_window'),
         )
     else:
         raise ValueError(f"Invalid stochastic model: {stochastic_model}")
@@ -128,7 +129,7 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
     T = dataset.T
     S0 = dataset.s_price
 
-    real = dataset.paths.squeeze()
+    real = dataset.paths.squeeze(1)
     generated = np.load(generated_filepath)
     if stochastic_model == 'MarketData':
         generated = generated[:real.shape[0], :]
@@ -560,6 +561,7 @@ if __name__ == "__main__":
         mu_j=dataset_args.get('mu_j', None),
         sigma_j=dataset_args.get('sigma_j', None),
         lamb=dataset_args.get('lamb', None),
+        sliding_window=dataset_args.get('sliding_window', None),
     )
 
 

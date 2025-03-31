@@ -125,6 +125,7 @@ def parse_int_list(s):
 
 # Market data params
 @click.option('--symbol', help='Symbol of the stock to use.', type=str, default='AAPL')
+@click.option('--sliding_window', help='Sliding window type', type=str, default='non_overlapping')
 
 def main(**kwargs):
     """Train diffusion-based generative model using the techniques described in the
@@ -185,7 +186,8 @@ def main(**kwargs):
         )
     elif opts.stochastic_model == "MarketData":
         c.gbm_kwargs.update(
-            symbol=opts.symbol
+            symbol=opts.symbol,
+            sliding_window=opts.sliding_window
         )
         c.gbm_kwargs.pop('s_price')
         c.gbm_kwargs.pop('mu')
