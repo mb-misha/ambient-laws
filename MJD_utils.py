@@ -124,3 +124,66 @@ def log_likelihood_merton_adj(params, data, T):
     pdf_vals = Merton_density_adjusted(data, T, mu, sigma, lamb, muJ, sigmaJ)
     # Avoid log(0) by clipping pdf values
     return -np.sum(np.log(np.clip(pdf_vals, 1e-12, None)))
+
+
+
+
+import numpy as np
+
+def estimate_mjd_parameters(series, dt, threshold=3):
+    """
+    Estimate parameters of the Merton Jump Diffusion model from price series.
+
+    Parameters:
+    - series: 2D array of shape (n_paths, n_steps)
+    - dt: Time step size.
+    - threshold: Threshold (in standard deviations) to identify jumps.
+
+    Returns:
+    - params: Dictionary of arrays with shape (n_paths,) for each parameter.
+    """
+    if series.ndim == 1:
+        series = series[np.newaxis, :]  # Make it (1, n_steps)
+
+    log_returns = np.diff(np.log(series), axis=1)
+    n_paths, n_returns = log_returns.shape
+
+    mu_hat = np.mean(log_returns, axis=1, keepdims=True)
+    sigma_hat = np.std(log_returns, axis=1, ddof=1, keepdims=True)
+
+    # Identify jumps
+    abs_deviation = np.abs(log_returns - mu_hat)
+    is_jump = abs_deviation > threshold * sigma_hat
+    is_no_jump = ~is_jump
+
+    # Jump intensity λ
+    lamb_hat = np.sum(is_jump, axis=1) / (n_returns * dt)
+
+    # Jump stats
+    jump_sizes = np.where(is_jump, log_returns, np.nan)
+    mu_j_hat = np.nanmean(jump_sizes, axis=1)
+    sigma_j_hat = np.nanstd(jump_sizes, axis=1, ddof=1)
+
+    # Set to nan if insufficient jump data
+    jump_counts = np.sum(is_jump, axis=1)
+    mu_j_hat = np.where(jump_counts == 0, np.nan, mu_j_hat)
+    sigma_j_hat = np.where(jump_counts <= 1, np.nan, sigma_j_hat)
+
+    # Diffusion component
+    diffusion_returns = np.where(is_no_jump, log_returns, np.nan)
+    mu_diff_hat = np.nanmean(diffusion_returns, axis=1) / dt
+    sigma_diff_hat = np.nanstd(diffusion_returns, axis=1, ddof=1) / np.sqrt(dt)
+
+    # Adjusted drift
+    k_hat = np.exp(mu_j_hat + 0.5 * sigma_j_hat**2) - 1
+    mu_hat_adj = mu_diff_hat + lamb_hat * k_hat
+
+    params = {
+        "mu": mu_hat_adj,
+        "sigma": sigma_diff_hat,
+        "lamb": lamb_hat,
+        "mu_j": mu_j_hat,
+        "sigma_j": sigma_j_hat,
+    }
+
+    return params

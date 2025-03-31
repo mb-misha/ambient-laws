@@ -14,7 +14,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from scipy.stats import skew, kurtosis
 from statsmodels.graphics.tsaplots import plot_acf
 import statsmodels.api as sm
-from MJD_utils import merton_jump_diffusion_price, log_likelihood_merton_adj
+from MJD_utils import merton_jump_diffusion_price, log_likelihood_merton_adj, estimate_mjd_parameters
 import logging
 from scipy.optimize import minimize
 
@@ -305,6 +305,26 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
             axes.axis('off')
             pdf.savefig(fig)
             plt.close(fig)
+
+
+            logging.info('Simple parameter estimation')
+            fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+            axes = axes.flatten()
+
+            real_params = estimate_mjd_parameters(real_gbm, dataset.dt)
+            generated_params = estimate_mjd_parameters(generated_gbm, dataset.dt)
+            for i, k in enumerate(real_params):
+                sns.kdeplot(real_params[k], label='real', fill=True, ax=axes[i])
+                sns.kdeplot(generated_params[k], label='generated', fill=True, ax=axes[i])
+                real_mean = np.nanmean(real_params[k])
+                generated_mean = np.nanmean(generated_params[k])
+                axes[i].axvline(real_mean, color='blue', linestyle='--', label=f'real mean ({real_mean:.4f})')
+                axes[i].axvline(generated_mean, color='orange', linestyle='--', label=f'generated mean ({generated_mean:.4f})')
+                axes[i].set_title(k)
+                axes[i].legend()
+            pdf.savefig(fig)
+            plt.close(fig)
+
 
 
         logging.info("Estimating drift and volatility")
