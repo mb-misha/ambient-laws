@@ -429,8 +429,10 @@ class RealMarketDataset(StochasticModelDataset):
 
         if self.sliding_window == 'non_overlapping':
             paths = self.non_overlapping_swv(paths, self.n_steps)
-        else:
+        elif self.sliding_window == 'overlapping':
             paths = np.lib.stride_tricks.sliding_window_view(paths, self.n_steps)
+        elif self.sliding_window == 'max':
+            paths = self.paths.reshape(1, self.n_steps)
 
         self.n_paths = paths.shape[0]
         self.paths = np.expand_dims(paths, axis=1)
