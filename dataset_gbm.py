@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 import yfinance as yf
+import pandas as pd
 
 
 class StochasticModelDataset(Dataset):
@@ -455,6 +456,11 @@ class RealMarketDataset(StochasticModelDataset):
             },
             "Real Market Data": {
                 "Symbol": self.symbol
+            },
+            "Extra noise": {
+                "sigma": self.sigma,
+                "corr prob": self.corruption_probability,
+                "noise type": self.noise_type,
             }
         }
 
@@ -468,6 +474,80 @@ class RealMarketDataset(StochasticModelDataset):
         max_length = arr.shape[0] - arr.shape[0] % window_size
         return arr[:max_length].reshape(-1, window_size)
 
+
+class HistoricalMarketDataset(StochasticModelDataset):
+    def __init__(self, start='2024-01-01', end='2024-12-31', symbols=None, **kwargs):
+        """
+        Loads real market data for a given symbol.
+        """
+        super().__init__(**kwargs)
+        if symbols is None:
+            symbols = self.get_symbols()
+        self.symbols = symbols
+        self.start = start
+        self.end = end 
+        self.paths = self.load_data()
+        self.process_paths()
+
+        self.name = 'RealMarketDataset'
+
+    def load_data(self):
+        """
+        Loads real market data for a given symbol.
+        """
+        data = yf.download(self.symbols, start=self.start, end=self.end)
+        data = data['Close'].dropna().to_numpy().squeeze().T
+        return data
+
+    def process_paths(self):
+
+        if self.return_log_returns:
+            paths = self.compute_log_returns()
+        else:
+            paths = self.paths
+
+
+        self.n_paths = paths.shape[0]
+        self.paths = np.expand_dims(paths, axis=1)
+        assert self.paths.shape == (self.n_paths, 1, self.n_steps)
+        self.resolution = self.n_steps
+        self.mean = np.mean(self.paths)
+        self.std = np.std(self.paths)
+
+    def __str__(self):
+        """
+        String representation of Real Market dataset.
+        """
+        params = {
+            "Model Name": self.name,
+            "Path Generation Parameters": {
+                "Number of Paths": self.n_paths,
+                "Number of Steps": self.n_steps,
+                "Return Log Returns": self.return_log_returns,
+                "Normalization": self.normalize
+            },
+            "Real Market Data": {
+                "Symbol": self.symbol
+            },
+            "Extra noise": {
+                "sigma": self.sigma,
+                "corr prob": self.corruption_probability,
+                "noise type": self.noise_type,
+            }
+        }
+
+        return json.dumps(params, indent=2)
+    
+    @staticmethod
+    def get_symbols():
+        url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
+        tables = pd.read_html(url)
+        sp500_table = tables[0]
+        symbols = sp500_table['Symbol'].tolist()
+        symbols = sorted(symbols)
+        return symbols
+        
+        
 
 
 def estimate_parameters(paths, dt):
