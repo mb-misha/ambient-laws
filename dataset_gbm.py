@@ -5,6 +5,9 @@ import torch
 from torch.utils.data import Dataset
 import yfinance as yf
 import pandas as pd
+import hashlib
+import joblib
+import os
 
 
 class StochasticModelDataset(Dataset):
@@ -476,7 +479,7 @@ class RealMarketDataset(StochasticModelDataset):
 
 
 class HistoricalMarketDataset(StochasticModelDataset):
-    def __init__(self, start='2024-01-01', end='2024-12-31', symbols=None, **kwargs):
+    def __init__(self, start='2024-01-01', end='2025-01-03', symbols=None, **kwargs):
         """
         Loads real market data for a given symbol.
         """
@@ -491,12 +494,31 @@ class HistoricalMarketDataset(StochasticModelDataset):
 
         self.name = 'RealMarketDataset'
 
+    def get_cache_filename(self):
+        """
+        Generates a unique cache filename based on symbols and date range.
+        """
+        cache_dir = "cache"
+        os.makedirs(cache_dir, exist_ok=True)
+        key = f"{self.symbols}_{self.start}_{self.end}"
+        hash_key = hashlib.md5(key.encode()).hexdigest()
+        return os.path.join(cache_dir, f"{hash_key}.pkl")
+
     def load_data(self):
         """
-        Loads real market data for a given symbol.
+        Loads real market data for a given symbol (cached).
         """
-        data = yf.download(self.symbols, start=self.start, end=self.end)
-        data = data['Close'].dropna().to_numpy().squeeze().T
+        cache_file = self.get_cache_filename()
+
+        if os.path.exists(cache_file):
+            print("Loading data from cache...")
+            data = joblib.load(cache_file)
+        else:
+            print("Downloading data from yfinance...")
+            data = yf.download(self.symbols, start=self.start, end=self.end, threads=False)
+            joblib.dump(data, cache_file)
+
+        data = data['Close'].interpolate(method='time').ffill().bfill().dropna(axis=1).to_numpy().T
         return data
 
     def process_paths(self):
@@ -508,6 +530,10 @@ class HistoricalMarketDataset(StochasticModelDataset):
 
 
         self.n_paths = paths.shape[0]
+        self.n_steps = paths.shape[1]
+        print('\n')
+        print(paths.shape)
+        print('\n')
         self.paths = np.expand_dims(paths, axis=1)
         assert self.paths.shape == (self.n_paths, 1, self.n_steps)
         self.resolution = self.n_steps
@@ -527,7 +553,7 @@ class HistoricalMarketDataset(StochasticModelDataset):
                 "Normalization": self.normalize
             },
             "Real Market Data": {
-                "Symbol": self.symbol
+                "# Symbols": len(self.symbols),
             },
             "Extra noise": {
                 "sigma": self.sigma,
@@ -540,13 +566,9 @@ class HistoricalMarketDataset(StochasticModelDataset):
     
     @staticmethod
     def get_symbols():
-        url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
-        tables = pd.read_html(url)
-        sp500_table = tables[0]
-        symbols = sp500_table['Symbol'].tolist()
-        symbols = sorted(symbols)
-        return symbols
-        
+        df = pd.read_csv('us_symbols.csv')
+        symbols = df['ticker'] 
+        return symbols.astype(str).tolist()
         
 
 

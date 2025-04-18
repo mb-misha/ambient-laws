@@ -2,7 +2,7 @@ import argparse
 import json
 import os
 
-from dataset_gbm import GBMGenerativeDataset, estimate_parameters, reverse_log_return, HestonGenerativeDataset, RealMarketDataset, MJDGenerativeDataset
+from dataset_gbm import GBMGenerativeDataset, estimate_parameters, reverse_log_return, HestonGenerativeDataset, RealMarketDataset, MJDGenerativeDataset, HistoricalMarketDataset
 import numpy as np
 from matplotlib import pyplot as plt
 import seaborn as sns
@@ -123,6 +123,14 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
             sigma=noise_sigma,
             sliding_window=kwargs.get('sliding_window'),
         )
+    elif stochastic_model == 'HistoricalData':
+        dataset = HistoricalMarketDataset(
+            n_steps=n_steps,
+            return_log_returns=return_log_returns,
+            normalize=normalization,
+            sigma=noise_sigma,
+        )
+        
     else:
         raise ValueError(f"Invalid stochastic model: {stochastic_model}")
 
@@ -134,7 +142,7 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
 
     real = dataset.paths.squeeze(1)
     generated = np.load(generated_filepath)
-    if stochastic_model == 'MarketData':
+    if stochastic_model in ['MarketData', 'HistoricalData']:
         generated = generated[:real.shape[0], :]
     if normalization == 'global_mean':
         generated_unnorm = generated * np.mean(real)
@@ -159,6 +167,16 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
     os.makedirs(raw_data_outdir, exist_ok=True)
     output_filename = os.path.join(outdir, 'paths_analysis.pdf')
     with PdfPages(output_filename) as pdf:
+
+        fig, axes = plt.subplots()
+        fig.suptitle('Parameters')
+        params_str = str(dataset) + "\n" + f"K={K}\n" + f"Training set size: ({n_training_paths}, {n_steps-1})\n\n"
+        axes.text(0.5, 0.5, params_str, fontsize=12, ha='center', va='center', bbox={"facecolor": "white", "alpha": 0.5, "pad": 5})
+        axes.axis('off')
+        pdf.savefig(fig)
+        plt.close(fig)
+        
+        
         logging.info("Plotting paths")
         # Create figure with subplots
         fig, axes = plt.subplots(2, 2, figsize=(12, 8))
@@ -411,7 +429,7 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
 
         logging.info('Pricing options')
         # Price options
-        if stochastic_model != 'MarketData':
+        if stochastic_model not in  ['MarketData', 'HistoricalData']:
             generated_gbm_reshaped = generated_gbm.reshape(-1, 100000, n_steps)
             results = []
             for i, pricer in enumerate([price_option_call, price_option_put]):
@@ -458,14 +476,6 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
             pdf.savefig(fig)
             plt.close(fig)
             df.to_csv(os.path.join(raw_data_outdir, 'option_pricing_results.csv'), index=False)
-
-        fig, axes = plt.subplots()
-        fig.suptitle('Parameters')
-        params_str = str(dataset) + "\n" + f"K={K}\n" + f"Training set size: ({n_training_paths}, {n_steps-1})\n\n"
-        axes.text(0.5, 0.5, params_str, fontsize=12, ha='center', va='center', bbox={"facecolor": "white", "alpha": 0.5, "pad": 5})
-        axes.axis('off')
-        pdf.savefig(fig)
-        plt.close(fig)
 
 
 def plot_distribution(axes, generated_unnorm, real):

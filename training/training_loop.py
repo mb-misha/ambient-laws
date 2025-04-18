@@ -22,7 +22,7 @@ from torch_utils import training_stats
 from torch_utils import misc
 import ambient_utils
 import wandb
-from dataset_gbm import GBMGenerativeDataset, HestonGenerativeDataset, MJDGenerativeDataset, RealMarketDataset
+from dataset_gbm import GBMGenerativeDataset, HestonGenerativeDataset, MJDGenerativeDataset, RealMarketDataset, HistoricalMarketDataset
 
 #----------------------------------------------------------------------------
 
@@ -81,6 +81,8 @@ def training_loop(
         dataset_obj = MJDGenerativeDataset(**gbm_kwargs)
     elif stochastic_model == 'MarketData':
         dataset_obj = RealMarketDataset(**gbm_kwargs)
+    elif stochastic_model == "HistoricalData":
+        dataset_obj = HistoricalMarketDataset(**gbm_kwargs)
     else:
         raise NotImplementedError
 

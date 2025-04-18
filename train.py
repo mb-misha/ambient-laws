@@ -192,6 +192,10 @@ def main(**kwargs):
         c.gbm_kwargs.pop('s_price')
         c.gbm_kwargs.pop('mu')
         c.gbm_kwargs.pop('sigma_gbm')
+    elif opts.stochastic_model == "HistoricalData":
+        c.gbm_kwargs.pop('s_price')
+        c.gbm_kwargs.pop('mu')
+        c.gbm_kwargs.pop('sigma_gbm')
     c.stochastic_model = opts.stochastic_model
     opts.dump = None
 
@@ -205,6 +209,8 @@ def main(**kwargs):
             dataset_obj = dataset_gbm.MJDGenerativeDataset(**c.gbm_kwargs)
         elif opts.stochastic_model == "MarketData":
             dataset_obj = dataset_gbm.RealMarketDataset(**c.gbm_kwargs)
+        elif opts.stochastic_model == "HistoricalData":
+            dataset_obj = dataset_gbm.HistoricalMarketDataset(**c.gbm_kwargs)
         dataset_name = dataset_obj.name
         c.dataset_kwargs.dataset_keep_percentage = opts.dataset_keep_percentage
         c.dataset_kwargs.resolution = dataset_obj.resolution # be explicit about dataset resolution
