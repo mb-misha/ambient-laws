@@ -517,9 +517,11 @@ class HistoricalMarketDataset(StochasticModelDataset):
             print("Downloading data from yfinance...")
             data = yf.download(self.symbols, start=self.start, end=self.end, threads=False)
             joblib.dump(data, cache_file)
-
-        data = data['Close'].interpolate(method='time').ffill().bfill().dropna(axis=1).to_numpy().T
-        return data
+        close_prices = data['Close']
+        bad_tickers = close_prices.columns[(close_prices < 0).any()]
+        print(f"\nRemoving bad tickers: {bad_tickers}\n")
+        clean_close = close_prices.drop(columns=bad_tickers)
+        return clean_close.interpolate(method='time').ffill().bfill().dropna(axis=1).to_numpy().T
 
     def process_paths(self):
 
