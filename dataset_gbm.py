@@ -8,6 +8,7 @@ import pandas as pd
 import hashlib
 import joblib
 import os
+import time
 
 
 class StochasticModelDataset(Dataset):
@@ -504,9 +505,9 @@ class HistoricalMarketDataset(StochasticModelDataset):
         hash_key = hashlib.md5(key.encode()).hexdigest()
         return os.path.join(cache_dir, f"{hash_key}.pkl")
 
-    def load_data(self):
+    def load_data(self, batch_size=1000, pause_time=5):
         """
-        Loads real market data for a given symbol (cached).
+        Loads real market data for a given symbol (cached). Downloads in batches to avoid rate limits.
         """
         cache_file = self.get_cache_filename()
 
@@ -514,12 +515,32 @@ class HistoricalMarketDataset(StochasticModelDataset):
             print("Loading data from cache...")
             data = joblib.load(cache_file)
         else:
-            print("Downloading data from yfinance...")
-            data = yf.download(self.symbols, start=self.start, end=self.end, threads=False)
+            print("Downloading data from yfinance in batches...")
+            all_data = []
+
+            for i in range(0, len(self.symbols), batch_size):
+                batch = self.symbols[i:i + batch_size]
+                print(f"Downloading batch {i} to {i + batch_size}...")
+                try:
+                    batch_data = yf.download(
+                        batch,
+                        start=self.start,
+                        end=self.end,
+                        threads=False,
+                    )
+                    all_data.append(batch_data)
+                except Exception as e:
+                    print(f"Batch {i} failed: {e}")
+                time.sleep(pause_time)
+
+            # Combine all downloaded data
+            data = pd.concat(all_data, axis=1)
             joblib.dump(data, cache_file)
+
         close_prices = data['Close']
         bad_tickers = close_prices.columns[(close_prices < 0).any()]
-        print(f"\nRemoving bad tickers: {bad_tickers}\n")
+        print(f"\nRemoving bad tickers: {bad_tickers.tolist()}\n")
+
         clean_close = close_prices.drop(columns=bad_tickers)
         return clean_close.interpolate(method='time').ffill().bfill().dropna(axis=1).to_numpy().T
 
