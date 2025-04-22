@@ -121,6 +121,8 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
             return_log_returns=return_log_returns,
             normalize=normalization,
             sigma=noise_sigma,
+            corruption_probability=kwargs.get('corruption_probability'),
+            noise_type=kwargs.get('noise_type'),
             sliding_window=kwargs.get('sliding_window'),
         )
     elif stochastic_model == 'HistoricalData':
@@ -129,6 +131,8 @@ def process_data(generated_filepath, normalization, stochastic_model, mu, sigma,
             return_log_returns=return_log_returns,
             normalize=normalization,
             sigma=noise_sigma,
+            corruption_probability=kwargs.get('corruption_probability'),
+            noise_type=kwargs.get('noise_type'),
         )
         
     else:
