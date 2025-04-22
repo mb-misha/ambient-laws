@@ -493,7 +493,7 @@ class HistoricalMarketDataset(StochasticModelDataset):
         self.paths = self.load_data()
         self.process_paths()
 
-        self.name = 'RealMarketDataset'
+        self.name = 'HistoricalMarketDataset'
 
     def get_cache_filename(self):
         """
