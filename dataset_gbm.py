@@ -103,6 +103,9 @@ class StochasticModelDataset(Dataset):
                     noise = np.random.normal(size=ts.shape)
                     sigma_n = np.sqrt((self.sigma/self.sigma_gbm)**2 - 1)
                     ts += sigma_n*noise
+                elif self.noise_type == 'extra_noise':
+                    noise = np.random.normal(size=ts.shape)
+                    ts += self.sigma*noise
                 else:
                     raise NotImplementedError
             else:
@@ -113,6 +116,8 @@ class StochasticModelDataset(Dataset):
                 noise_level = self.sigma
         if self.noise_type == 'denoise_only':
             noise_level = self.sigma
+        if self.noise_type == 'extra_noise':
+            noise_level = 0.0
 
         return {
             "image": ts.copy(),
