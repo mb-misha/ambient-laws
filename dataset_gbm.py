@@ -39,14 +39,13 @@ class StochasticModelDataset(Dataset):
         self.corruption_probability = corruption_probability
         self.sigma = sigma
         self.noise_type = noise_type
-        assert n_ts_features == 1, "Only 1D timeseries data is supported."
         assert self.normalize in [None, 'global_zscore', 'per_path_zscore', 'global_mean']
         
         self.paths = None
         
         # unet compatibility
         self.resolution = self.n_steps
-        self.num_channels = 1
+        self.num_channels = self.n_ts_features
         self.label_dim = 0
         self.has_labels = False
         self.has_onehot_labels = False
@@ -71,8 +70,9 @@ class StochasticModelDataset(Dataset):
         if self.return_log_returns:
             self.paths = self.compute_log_returns()
             self.n_steps -= 1
-        self.paths = np.expand_dims(self.paths, axis=1)
-        assert self.paths.shape == (self.n_paths, 1, self.n_steps)
+        if self.paths.shape == (self.n_paths, self.n_steps):
+            self.paths = np.expand_dims(self.paths, axis=1)
+        assert self.paths.shape == (self.n_paths, self.n_ts_features, self.n_steps)
         self.resolution = self.n_steps
         self.mean = np.mean(self.paths)
         self.std = np.std(self.paths)
@@ -598,6 +598,78 @@ class HistoricalMarketDataset(StochasticModelDataset):
         symbols = df['ticker'] 
         return symbols.astype(str).tolist()
         
+class CorrelatedGBMGenerativeDataset(StochasticModelDataset):
+    def __init__(
+        self,
+        n_paths=10000,
+        n_steps=200,
+        n_ts_features=3,
+        s_price=100.0,
+        mu=0.05,
+        sigma_gbm=0.2,
+        corr_matrix=None,
+        T=1.0,
+        return_log_returns=False,
+        normalize=None,
+        **kwargs
+    ):
+        super().__init__(n_paths, n_steps, n_ts_features, T, return_log_returns, normalize, **kwargs)
+        self.s_price = s_price
+        self.mu = self._expand_param(mu, n_ts_features)
+        self.sigma_gbm = self._expand_param(sigma_gbm, n_ts_features)
+        self.name = "CorrelatedGBMGenerativeDataset"
+
+        if corr_matrix is None:
+            self.corr_matrix = np.eye(n_ts_features)
+        else:
+            corr_matrix = np.asarray(corr_matrix)
+            assert corr_matrix.shape == (n_ts_features, n_ts_features), "Invalid correlation matrix shape"
+            self.corr_matrix = corr_matrix
+
+        self.L = np.linalg.cholesky(self.corr_matrix)
+
+        self.paths = self.simulate_paths()
+        self.process_paths()
+
+    def _expand_param(self, param, n):
+        return np.full(n, param) if np.isscalar(param) else np.asarray(param)
+
+    def simulate_paths(self):
+        dt = self.dt
+        sqrt_dt = np.sqrt(dt)
+
+        # Sample independent normals: (n_paths, n_steps - 1, n_ts_features)
+        Z = np.random.normal(size=(self.n_paths, self.n_steps - 1, self.n_ts_features))
+
+        # Correlated Brownian increments
+        correlated_increments = np.einsum("ij,pnj->pni", self.L, Z) * sqrt_dt
+
+        # Expand mu and sigma: (1, 1, n_ts_features)
+        mu = self.mu.reshape(1, 1, -1)
+        sigma = self.sigma_gbm.reshape(1, 1, -1)
+
+        # Calculate GBM log-returns
+        drift = (mu - 0.5 * sigma ** 2) * dt
+        diffusion = sigma * correlated_increments
+        log_returns = drift + diffusion  # Shape: (n_paths, n_steps - 1, n_ts_features)
+
+        # Insert zeros at start and exponentiate cumulative sum
+        log_returns = np.concatenate([np.zeros((self.n_paths, 1, self.n_ts_features)), log_returns], axis=1)
+        paths = np.exp(np.cumsum(log_returns, axis=1)) * self.s_price
+
+        return paths.transpose(0, 2, 1)  # Final shape: (n_paths, n_ts_features, n_steps)
+
+    def __str__(self):
+        return json.dumps({
+            "Model Name": self.name,
+            "Paths": self.n_paths,
+            "Steps": self.n_steps,
+            "Features": self.n_ts_features,
+            "Initial Price": self.s_price,
+            "Mu": self.mu.tolist(),
+            "Sigma": self.sigma_gbm.tolist(),
+            "Correlation Matrix": self.corr_matrix.tolist()
+        }, indent=2)
 
 
 def estimate_parameters(paths, dt):
