@@ -533,8 +533,8 @@ def plot_sample_statistics(axes, generated_unnorm, real):
     real_stats = {
         "Mean": real_mean.mean(),
         "Std": real_std.mean(),
-        "Skew": real_skew.mean(),
-        "Kurtosis": real_kurtosis.mean()
+        "Skew": np.nanmean(real_skew),
+        "Kurtosis": np.nanmean(real_kurtosis)
     }
     generated_stats = {
         "Mean": generated_mean.mean(),
