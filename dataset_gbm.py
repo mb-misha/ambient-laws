@@ -666,9 +666,9 @@ class CorrelatedGBMGenerativeDataset(StochasticModelDataset):
             "Steps": self.n_steps,
             "Features": self.n_ts_features,
             "Initial Price": self.s_price,
-            "Mu": self.mu.tolist(),
-            "Sigma": self.sigma_gbm.tolist(),
-            "Correlation Matrix": self.corr_matrix.tolist()
+            "Mu": str(self.mu.tolist()),
+            "Sigma": str(self.sigma_gbm.tolist()),
+            # "Correlation Matrix": self.corr_matrix.tolist()
         }, indent=2)
 
 
