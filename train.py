@@ -199,10 +199,19 @@ def main(**kwargs):
     elif opts.stochastic_model == 'CorrelatedGBMGenerativeDataset':
         c.gbm_kwargs.update(
             corr_matrix=[
-                [1.0, 0.3],
-                [0.3, 1.0]
+                [1.0, 0.8, 0.4],
+                [0.8, 1.0, 0.2],
+                [0.4, 0.2, 1.0],
             ]
+        ),
+        c.gbm_kwargs.pop('mu')
+        c.gbm_kwargs.pop('sigma_gbm')
+        c.gbm_kwargs.update(
+            mu=[0.05, 0.03, 0.07],
+            sigma_gbm=[0.2, 0.15, 0.25],
         )
+    elif opts.stochastic_model == 'Gaussian':
+        c.gbm_kwargs.clear()
 
     c.stochastic_model = opts.stochastic_model
     opts.dump = None
@@ -221,6 +230,8 @@ def main(**kwargs):
             dataset_obj = dataset_gbm.HistoricalMarketDataset(**c.gbm_kwargs)
         elif opts.stochastic_model == "CorrelatedGBMGenerativeDataset":
             dataset_obj = dataset_gbm.CorrelatedGBMGenerativeDataset(**c.gbm_kwargs)
+        elif opts.stochastic_model == "Gaussian":
+            dataset_obj = dataset_gbm.STDGaussianGenerativeDataset()
         dataset_name = dataset_obj.name
         c.dataset_kwargs.dataset_keep_percentage = opts.dataset_keep_percentage
         c.dataset_kwargs.resolution = dataset_obj.resolution # be explicit about dataset resolution
@@ -254,6 +265,7 @@ def main(**kwargs):
     c.loss_kwargs.update(num_consistency_steps=opts.num_consistency_steps)
     c.loss_kwargs.update(num_primes=opts.num_primes)
     c.loss_kwargs.update(consistency_coeff=opts.consistency_coeff)
+    c.loss_kwargs.update(sigma_data=1.0)
 
     # Network options.
     if opts.cbase is not None:

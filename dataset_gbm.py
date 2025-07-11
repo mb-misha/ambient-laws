@@ -126,6 +126,71 @@ class StochasticModelDataset(Dataset):
             'noise': noise,
         }
 
+class STDGaussianGenerativeDataset(StochasticModelDataset):
+    def __init__(
+            self,
+            n_paths=10000,
+            n_steps=256,
+            n_ts_features=1,
+            s_price=100.0,
+            mu=0.05,
+            sigma_gbm=0.2,
+            T=1.0,
+            return_log_returns=False,
+            normalize=None,
+            **kwargs
+    ):
+        """
+        Generates GBM paths with shape (n_paths, n_steps, n_ts_features).
+        Can optionally return log returns instead of price paths.
+        """
+        super().__init__(n_paths, n_steps, n_ts_features, T, return_log_returns, normalize, **kwargs)
+        self.s_price = s_price
+        self.mu = mu
+        self.sigma_gbm = sigma_gbm
+        self.name = 'GBMGenerativeDataset'
+        
+        # Simulate GBM paths
+        self.paths = self.simulate_paths()
+        self.resolution = self.n_steps
+
+    def simulate_paths(self):
+        """
+        Simulates Geometric Brownian Motion (GBM) paths.
+        """
+        rng = np.random.default_rng(seed=999)
+        return rng.normal(
+            # scale=(1+0.0165**2)**0.5,
+            size=(self.n_paths, self.n_ts_features, self.n_steps)
+            ) 
+
+    def __str__(self):
+        """
+        String representation of Geometric Brownian Motion model parameters.
+        """
+        params = {
+            "Model Name": self.name,
+            "Path Generation Parameters": {
+                "Number of Paths": self.n_paths,
+                "Number of Steps": self.n_steps,
+                "Time Horizon (T)": self.T,
+                "Time Step (dt)": round(self.dt, 4),
+                "Return Log Returns": self.return_log_returns,
+                "Normalization": self.normalize
+            },
+            "GBM Specific Parameters": {
+                "Initial Stock Price (S0)": self.s_price,
+                "Drift (mu)": self.mu,
+                "Volatility (sigma)": self.sigma_gbm
+            },
+            "Extra noise": {
+                "sigma": self.sigma,
+                "corr prob": self.corruption_probability,
+                "noise type": self.noise_type,
+            }
+        }
+
+        return json.dumps(params, indent=2)
 class GBMGenerativeDataset(StochasticModelDataset):
     def __init__(
             self,

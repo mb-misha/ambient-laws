@@ -22,7 +22,7 @@ from torch_utils import training_stats
 from torch_utils import misc
 import ambient_utils
 import wandb
-from dataset_gbm import GBMGenerativeDataset, HestonGenerativeDataset, MJDGenerativeDataset, RealMarketDataset, HistoricalMarketDataset, CorrelatedGBMGenerativeDataset
+from dataset_gbm import GBMGenerativeDataset, HestonGenerativeDataset, MJDGenerativeDataset, RealMarketDataset, HistoricalMarketDataset, CorrelatedGBMGenerativeDataset, STDGaussianGenerativeDataset
 
 #----------------------------------------------------------------------------
 
@@ -85,6 +85,8 @@ def training_loop(
         dataset_obj = HistoricalMarketDataset(**gbm_kwargs)
     elif stochastic_model == 'CorrelatedGBMGenerativeDataset':
         dataset_obj = CorrelatedGBMGenerativeDataset(**gbm_kwargs)
+    elif stochastic_model == 'Gaussian':
+        dataset_obj = STDGaussianGenerativeDataset()
     else:
         raise NotImplementedError
 
