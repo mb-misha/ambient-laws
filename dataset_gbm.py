@@ -737,6 +737,147 @@ class CorrelatedGBMGenerativeDataset(StochasticModelDataset):
         }, indent=2)
 
 
+class HistoricalMarketDatasetMultivar(StochasticModelDataset):
+    def __init__(self, start='2024-01-01', end='2025-01-03', symbols=None, **kwargs):
+        """
+        Loads real market data for a given symbol.
+        """
+        super().__init__(**kwargs)
+        if symbols is None:
+            symbols = self.get_symbols()
+        self.symbols = symbols
+        self.start = start
+        self.end = end 
+        self.paths = self.load_data()
+        self.process_paths()
+
+        self.name = 'HistoricalMarketDataset'
+
+    def get_cache_filename(self):
+        """
+        Generates a unique cache filename based on symbols and date range.
+        """
+        cache_dir = "cache"
+        os.makedirs(cache_dir, exist_ok=True)
+        key = f"{self.symbols}_{self.start}_{self.end}"
+        hash_key = hashlib.md5(key.encode()).hexdigest()
+        return os.path.join(cache_dir, f"{hash_key}.pkl")
+
+    def load_data(self, batch_size=5, pause_time=5):
+        """
+        Loads real market data for a given symbol (cached). Downloads in batches to avoid rate limits.
+        Excludes 'Volume' column and filters out tickers with any negative price value.
+        """
+        cache_file = self.get_cache_filename()
+
+        if os.path.exists(cache_file):
+            print("Loading data from cache...")
+            data = joblib.load(cache_file)
+        else:
+            print("Downloading data from yfinance in batches...")
+            all_data = []
+
+            for i in range(0, len(self.symbols), batch_size):
+                batch = self.symbols[i:i + batch_size]
+                print(f"Downloading batch {i} to {i + batch_size}...")
+                try:
+                    batch_data = yf.download(
+                        batch,
+                        start=self.start,
+                        end=self.end,
+                        threads=False,
+                        group_by='ticker'  # Ensures MultiIndex columns
+                    )
+                    all_data.append(batch_data)
+                except Exception as e:
+                    print(f"Batch {i} failed: {e}")
+                time.sleep(pause_time)
+
+            # Combine all downloaded data
+            data = pd.concat(all_data, axis=1)
+            joblib.dump(data, cache_file)
+
+        # Drop 'Volume' column
+        data = data.drop(columns=[col for col in data.columns if col[1] == 'Volume'])
+
+        # Identify bad tickers with any price < 0 in any column
+        bad_tickers = set()
+        for ticker in data.columns.get_level_values(0).unique():
+            subdf = data[ticker]
+            if (subdf < 0).any().any():
+                bad_tickers.add(ticker)
+
+        print(f"\nRemoving bad tickers: {sorted(bad_tickers)}\n")
+        data = data.drop(columns=bad_tickers, level=0)
+
+        # Interpolate and return clean data
+        data = data.interpolate(method='time').ffill().bfill().dropna(axis=1)
+        
+        # Convert from (time, ticker × feature) -> (ticker, feature, time)
+        tickers = sorted(data.columns.get_level_values(0).unique())
+        features = ['Open', 'High', 'Low', 'Close']
+
+        # Ensure correct column order (ticker-major then feature)
+        data = data.loc[:, [(ticker, feat) for ticker in tickers for feat in features if (ticker, feat) in data.columns]]
+
+        # Convert to numpy and reshape
+        n_timesteps = data.shape[0]
+        n_tickers = len(tickers)
+        n_features = len(features)
+
+        data_np = data.to_numpy().reshape(n_timesteps, n_tickers, n_features)  # (time, tickers, features)
+        return data_np.transpose(1, 2, 0)  # (tickers, features, time)
+
+
+    def process_paths(self):
+
+        if self.return_log_returns:
+            paths = self.compute_log_returns()
+        else:
+            paths = self.paths
+
+
+        self.n_paths = paths.shape[0]
+        self.n_ts_features = paths.shape[1]
+        self.n_steps = paths.shape[2]
+        self.paths = paths
+        assert self.paths.shape == (self.n_paths, self.n_ts_features, self.n_steps)
+        self.resolution = self.n_steps
+        self.mean = np.mean(self.paths)
+        self.std = np.std(self.paths)
+
+    def __str__(self):
+        """
+        String representation of Real Market dataset.
+        """
+        params = {
+            "Model Name": self.name,
+            "Path Generation Parameters": {
+                "Number of Paths": self.n_paths,
+                "Number of Features": self.n_ts_features,
+                "Number of Steps": self.n_steps,
+                "Return Log Returns": self.return_log_returns,
+                "Normalization": self.normalize
+            },
+            "Real Market Data": {
+                "# Symbols": len(self.symbols),
+            },
+            "Extra noise": {
+                "sigma": self.sigma,
+                "corr prob": self.corruption_probability,
+                "noise type": self.noise_type,
+            }
+        }
+
+        return json.dumps(params, indent=2)
+    
+    @staticmethod
+    def get_symbols():
+        df = pd.read_csv('us_symbols.csv')
+        symbols = df['ticker'] 
+        return symbols.astype(str).tolist()
+
+
 def estimate_parameters(paths, dt):
     """
     Estimates the drift (μ) and volatility (σ) from the generated paths.
